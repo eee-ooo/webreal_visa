@@ -1,0 +1,31 @@
+WRVISA_0.1 {
+    global:
+        viAssertTrigger;
+        viClear;
+        viClose;
+        viFindNext;
+        viFindRsrc;
+        viFlush;
+        viGetAttribute;
+        viGetDefaultRM;
+        viLock;
+        viOpen;
+        viOpenDefaultRM;
+        viParseRsrc;
+        viParseRsrcEx;
+        viRead;
+        viReadSTB;
+        viSetAttribute;
+        viSetBuf;
+        viStatusDesc;
+        viTerminate;
+        viUnlock;
+        viWrite;
+    local:
+        *;
+};
+
+WRVISA_0.2 {
+    global:
+        wrvisaSetSerialPath;
+} WRVISA_0.1;

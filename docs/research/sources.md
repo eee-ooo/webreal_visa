@@ -1,0 +1,55 @@
+# 技术与来源台账
+
+## 权威规范
+
+| 来源 | 固定信息 | 用途 | 采用关系 |
+|---|---|---|---|
+| IVI Foundation, VPP-4.3 | Revision 7.2.1, 2024-01-04, `vpp43_2024-01-04.pdf` | API 语义、资源语法、查找表达式、状态与锁要求 | 规范依据；不复制实现代码 |
+| IVI Foundation, VPP-4.3.2 | Revision 7.2, 2022-05-19, `vpp432_2022-05-19.pdf` | C 文本绑定、`visa.h`/`visatype.h` 参考内容、常量数值 | ABI 数值依据；按固定宽度平台类型实现 |
+| IVI Specifications 下载页 | 2026-08-11 查阅 | 确认当前公开修订与权威下载位置 | 元数据依据 |
+
+## 本地调研材料
+
+| 文件 | 性质 | 处理方式 |
+|---|---|---|
+| 父目录 `开源VISA项目调研.html` | 静态源码调研报告 | 只作项目线索，结论需回到上游或规范验证 |
+| 父目录 `visa标准接口调研/VISA 调研1：标准与相关库.html` | 静态标准与库调研报告 | 只作线索，不作为规范原文 |
+| 父目录 `VISA_PROJECT_MASTER_PROMPT.md` | 需求形成过程 | 已整理导入 `docs/project/requirements.md`；仓库内文件为权威版本 |
+
+## 采用的第三方依赖
+
+| 项目 | 固定来源 | 许可证 | 采用关系 |
+|---|---|---|---|
+| standalone Asio 1.38.2 | `chriskohlhoff/asio@8806a6803cde7054c3049d3666d3ec36786568c5`；归档 SHA-256 `ca7f6c14f2bf91e61c7e81fb693f2f8fc86f93e85520d5fc7fd035d0f666bb35`；主要使用 `asio/include/asio.hpp`、TCP、serial_port、strand、timer 与 cancellation API | Boost Software License 1.0 | `0.2` 私有 header-only 构建依赖；未修改，不出现在公共头和安装导出依赖中；许可证与声明随安装包提供 |
+
+Asio 版本和构建决策见 [`ADR-0006`](../decisions/0006-asio-real-transport-runtime.md)，许可分发边界见 [`licensing.md`](../project/licensing.md)。
+
+## 开源实现参考边界
+
+`0.1`/`0.2` 没有复制或修改下列参考项目代码，也不链接其库。2026-08-11 的实际源码复核详情见 [`implementation-review.md`](implementation-review.md)。采用的 Asio 依赖已在上节单独声明，不归入“仅参考”列表。
+
+| 项目 | 上游 | 许可证 | 当前关系 |
+|---|---|---|---|
+| PyVISA | `pyvisa/pyvisa`，`e3faa8e1d2ddeb754aad223d4a6d7b68f8cc687c`，`pyvisa/rname.py`、`LICENSE` | MIT | 资源注册/规范化思想参考；未复制 |
+| pyvisa-py | `pyvisa/pyvisa-py`，`7ed714c7f081404db3b860f9a145873bd38e0d67`，`pyvisa_py/sessions.py`、`LICENSE` | MIT | 后端会话注册和公共属性思想参考；未复制 |
+| OpenVisa | `lilongww/OpenVisa`，`0a7bdac9c490819440416268c876a37c1b4896c8`，`src/OpenVisa/Private/IOBase.h`、`src/OpenVisa/Object.cpp`、`LICENSE` | LGPL-3.0-or-later | 只作架构对照；禁止复制进目标 MIT 源码，未链接 |
+| liblxi | `lxi-tools/liblxi` | BSD-3-Clause（须按提交复核） | 协议实现线索，未纳入 |
+| libhislip | `lxi-tools/libhislip` | BSD-3-Clause（须按提交复核） | 协议实现线索，未纳入 |
+| linux-gpib | `coolshou/linux-gpib` 等分发源 | GPL 系列 | 仅协议/工具研究，不进入库 |
+| libusb | `libusb/libusb` | LGPL-2.1-or-later | 后续可替换动态 USB 边界候选；0.2 未依赖 |
+
+## 证据 URL
+
+- https://www.ivifoundation.org/specifications/default.html
+- https://www.ivifoundation.org/downloads/VISA/vpp43_2024-01-04.pdf
+- https://www.ivifoundation.org/downloads/VISA/vpp432_2022-05-19.pdf
+- https://github.com/pyvisa/pyvisa-py
+- https://github.com/lilongww/OpenVisa
+- https://github.com/lxi-tools/liblxi
+- https://github.com/lxi-tools/libhislip
+- https://think-async.com/Asio/asio-1.38.2/doc/
+- https://think-async.com/Asio/License
+- https://github.com/chriskohlhoff/asio/tree/8806a6803cde7054c3049d3666d3ec36786568c5
+- https://github.com/libusb/libusb
+
+CI 使用 `actions/checkout` 的固定提交 `de0fac2e4500dabe0009e67214ff5f5447ce83dd`（v6.0.2，MIT）；它只在 GitHub 托管构建环境执行，不进入库或发行物。

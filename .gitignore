@@ -1,0 +1,15 @@
+/build/
+/build-*/
+/.cache/
+/compile_commands.json
+*.user
+*.suo
+*.VC.db
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+*.exe
