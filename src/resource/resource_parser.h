@@ -20,6 +20,13 @@ enum class ResourceKind {
     project_mock,
 };
 
+enum class TcpipProtocol {
+    none,
+    vxi11,
+    hislip,
+    unsupported,
+};
+
 struct ResourceDescriptor {
     ResourceKind kind{};
     ViUInt16 interface_type{0};
@@ -29,6 +36,7 @@ struct ResourceDescriptor {
     std::string host;
     ViUInt16 port{0};
     std::string device_name;
+    TcpipProtocol tcpip_protocol{TcpipProtocol::none};
 };
 
 std::optional<ResourceDescriptor> parse_resource(std::string_view value);

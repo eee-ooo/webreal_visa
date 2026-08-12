@@ -1,7 +1,10 @@
 #include "resource/find_expression.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cctype>
+#include <cstdint>
+#include <limits>
 #include <set>
 #include <utility>
 #include <vector>
@@ -17,6 +20,20 @@ struct FindNode {
     bool one_or_more{false};
     std::vector<std::pair<char, char>> ranges;
     std::vector<std::shared_ptr<const FindNode>> children;
+};
+
+struct FindAttributeNode {
+    enum class Type { relation, logical_and, logical_or, logical_not };
+    enum class Attribute { intf_type, intf_num, rsrc_class, rsrc_name, asrl_baud };
+    enum class Compare { equal, not_equal, less, less_equal, greater, greater_equal };
+
+    Type type{Type::relation};
+    Attribute attribute{Attribute::intf_type};
+    Compare compare{Compare::equal};
+    bool string_value{false};
+    std::int64_t number{0};
+    std::string text;
+    std::vector<std::shared_ptr<const FindAttributeNode>> children;
 };
 
 namespace {
@@ -222,6 +239,288 @@ private:
     std::size_t nodes_{0};
 };
 
+class AttributeParser {
+public:
+    explicit AttributeParser(std::string_view input) : input_(input) {}
+
+    std::shared_ptr<const FindAttributeNode> parse(std::string& error) {
+        auto result = parse_or(error, 0);
+        skip_space();
+        if (!result || position_ != input_.size()) {
+            if (error.empty()) {
+                error = "unexpected attribute-expression token";
+            }
+            return {};
+        }
+        return result;
+    }
+
+private:
+    std::shared_ptr<const FindAttributeNode> make(FindAttributeNode node,
+                                                  std::string& error) {
+        if (++nodes_ > 256) {
+            error = "attribute expression is too complex";
+            return {};
+        }
+        return std::make_shared<FindAttributeNode>(std::move(node));
+    }
+
+    void skip_space() {
+        while (position_ < input_.size() &&
+               std::isspace(static_cast<unsigned char>(input_[position_])) != 0) {
+            ++position_;
+        }
+    }
+
+    bool consume(std::string_view token) {
+        skip_space();
+        if (input_.substr(position_, token.size()) != token) {
+            return false;
+        }
+        position_ += token.size();
+        return true;
+    }
+
+    std::shared_ptr<const FindAttributeNode> parse_or(std::string& error,
+                                                      std::size_t depth) {
+        auto left = parse_and(error, depth);
+        if (!left) {
+            return {};
+        }
+        while (consume("||")) {
+            auto right = parse_and(error, depth);
+            if (!right) {
+                return {};
+            }
+            FindAttributeNode node;
+            node.type = FindAttributeNode::Type::logical_or;
+            node.children = {std::move(left), std::move(right)};
+            left = make(std::move(node), error);
+        }
+        return left;
+    }
+
+    std::shared_ptr<const FindAttributeNode> parse_and(std::string& error,
+                                                       std::size_t depth) {
+        auto left = parse_factor(error, depth);
+        if (!left) {
+            return {};
+        }
+        while (consume("&&")) {
+            auto right = parse_factor(error, depth);
+            if (!right) {
+                return {};
+            }
+            FindAttributeNode node;
+            node.type = FindAttributeNode::Type::logical_and;
+            node.children = {std::move(left), std::move(right)};
+            left = make(std::move(node), error);
+        }
+        return left;
+    }
+
+    std::shared_ptr<const FindAttributeNode> parse_factor(std::string& error,
+                                                          std::size_t depth) {
+        if (depth > 32) {
+            error = "attribute-expression nesting is too deep";
+            return {};
+        }
+        if (consume("!")) {
+            auto child = parse_factor(error, depth + 1u);
+            if (!child) {
+                return {};
+            }
+            FindAttributeNode node;
+            node.type = FindAttributeNode::Type::logical_not;
+            node.children = {std::move(child)};
+            return make(std::move(node), error);
+        }
+        if (consume("(")) {
+            auto child = parse_or(error, depth + 1u);
+            if (!child || !consume(")")) {
+                if (error.empty()) {
+                    error = "unclosed attribute-expression group";
+                }
+                return {};
+            }
+            return child;
+        }
+        return parse_relation(error);
+    }
+
+    static std::optional<FindAttributeNode::Attribute> attribute_id(
+        std::string_view identifier) {
+        std::string name(identifier);
+        std::transform(name.begin(), name.end(), name.begin(), [](unsigned char ch) {
+            return static_cast<char>(std::toupper(ch));
+        });
+        if (name == "VI_ATTR_INTF_TYPE") {
+            return FindAttributeNode::Attribute::intf_type;
+        }
+        if (name == "VI_ATTR_INTF_NUM") {
+            return FindAttributeNode::Attribute::intf_num;
+        }
+        if (name == "VI_ATTR_RSRC_CLASS") {
+            return FindAttributeNode::Attribute::rsrc_class;
+        }
+        if (name == "VI_ATTR_RSRC_NAME") {
+            return FindAttributeNode::Attribute::rsrc_name;
+        }
+        if (name == "VI_ATTR_ASRL_BAUD") {
+            return FindAttributeNode::Attribute::asrl_baud;
+        }
+        return std::nullopt;
+    }
+
+    std::optional<std::string_view> identifier() {
+        skip_space();
+        const auto start = position_;
+        if (position_ >= input_.size() ||
+            std::isalpha(static_cast<unsigned char>(input_[position_])) == 0) {
+            return std::nullopt;
+        }
+        ++position_;
+        while (position_ < input_.size()) {
+            const auto character = static_cast<unsigned char>(input_[position_]);
+            if (std::isalnum(character) == 0 && character != '_') {
+                break;
+            }
+            ++position_;
+        }
+        return input_.substr(start, position_ - start);
+    }
+
+    std::optional<FindAttributeNode::Compare> compare_operator() {
+        if (consume("==")) {
+            return FindAttributeNode::Compare::equal;
+        }
+        if (consume("!=")) {
+            return FindAttributeNode::Compare::not_equal;
+        }
+        if (consume(">=")) {
+            return FindAttributeNode::Compare::greater_equal;
+        }
+        if (consume("<=")) {
+            return FindAttributeNode::Compare::less_equal;
+        }
+        if (consume(">")) {
+            return FindAttributeNode::Compare::greater;
+        }
+        if (consume("<")) {
+            return FindAttributeNode::Compare::less;
+        }
+        return std::nullopt;
+    }
+
+    std::optional<std::string> string_literal(std::string& error) {
+        skip_space();
+        if (position_ >= input_.size() || input_[position_] != '"') {
+            return std::nullopt;
+        }
+        ++position_;
+        const auto start = position_;
+        while (position_ < input_.size() && input_[position_] != '"') {
+            ++position_;
+        }
+        if (position_ >= input_.size()) {
+            error = "unclosed attribute string";
+            return std::nullopt;
+        }
+        std::string value(input_.substr(start, position_ - start));
+        ++position_;
+        return value;
+    }
+
+    std::optional<std::int64_t> number_literal(std::string& error) {
+        skip_space();
+        const auto start = position_;
+        if (position_ < input_.size() && input_[position_] == '-') {
+            ++position_;
+        }
+        int base = 10;
+        if (position_ + 1u < input_.size() && input_[position_] == '0' &&
+            (input_[position_ + 1u] == 'x' || input_[position_ + 1u] == 'X')) {
+            if (position_ != start) {
+                error = "negative hexadecimal attribute value is not supported";
+                return std::nullopt;
+            }
+            base = 16;
+            position_ += 2u;
+        }
+        const auto digits = position_;
+        while (position_ < input_.size() &&
+               (base == 16 ? std::isxdigit(static_cast<unsigned char>(input_[position_]))
+                           : std::isdigit(static_cast<unsigned char>(input_[position_]))) != 0) {
+            ++position_;
+        }
+        if (position_ == digits) {
+            return std::nullopt;
+        }
+        std::int64_t value = 0;
+        const auto first = input_.data() + static_cast<std::ptrdiff_t>(base == 16 ? digits : start);
+        const auto last = input_.data() + static_cast<std::ptrdiff_t>(position_);
+        const auto converted = std::from_chars(first, last, value, base);
+        if (converted.ec != std::errc{} || converted.ptr != last) {
+            error = "attribute number is out of range";
+            return std::nullopt;
+        }
+        return value;
+    }
+
+    std::shared_ptr<const FindAttributeNode> parse_relation(std::string& error) {
+        const auto raw_identifier = identifier();
+        if (!raw_identifier) {
+            error = "missing attribute identifier";
+            return {};
+        }
+        const auto attribute = attribute_id(*raw_identifier);
+        if (!attribute) {
+            error = "unsupported or non-global attribute";
+            return {};
+        }
+        const auto comparison = compare_operator();
+        if (!comparison) {
+            error = "missing attribute comparison operator";
+            return {};
+        }
+        FindAttributeNode node;
+        node.attribute = *attribute;
+        node.compare = *comparison;
+        const bool expects_string = *attribute == FindAttributeNode::Attribute::rsrc_class ||
+                                    *attribute == FindAttributeNode::Attribute::rsrc_name;
+        if (expects_string) {
+            if (*comparison != FindAttributeNode::Compare::equal &&
+                *comparison != FindAttributeNode::Compare::not_equal) {
+                error = "string attributes only support == and !=";
+                return {};
+            }
+            auto value = string_literal(error);
+            if (!value) {
+                if (error.empty()) {
+                    error = "string attribute requires a quoted value";
+                }
+                return {};
+            }
+            node.string_value = true;
+            node.text = std::move(*value);
+        } else {
+            auto value = number_literal(error);
+            if (!value) {
+                if (error.empty()) {
+                    error = "numeric attribute requires a number";
+                }
+                return {};
+            }
+            node.number = *value;
+        }
+        return make(std::move(node), error);
+    }
+
+    std::string_view input_;
+    std::size_t position_{0};
+    std::size_t nodes_{0};
+};
+
 using Positions = std::set<std::size_t>;
 
 Positions match_node(const FindNode& node, std::string_view value, std::size_t position);
@@ -300,22 +599,128 @@ Positions match_node(const FindNode& node, std::string_view value, std::size_t p
     return {};
 }
 
+bool compare_number(std::int64_t left, FindAttributeNode::Compare comparison,
+                    std::int64_t right) {
+    switch (comparison) {
+        case FindAttributeNode::Compare::equal:
+            return left == right;
+        case FindAttributeNode::Compare::not_equal:
+            return left != right;
+        case FindAttributeNode::Compare::less:
+            return left < right;
+        case FindAttributeNode::Compare::less_equal:
+            return left <= right;
+        case FindAttributeNode::Compare::greater:
+            return left > right;
+        case FindAttributeNode::Compare::greater_equal:
+            return left >= right;
+    }
+    return false;
+}
+
+bool compare_string(std::string_view left, FindAttributeNode::Compare comparison,
+                    std::string_view right) {
+    if (comparison == FindAttributeNode::Compare::equal) {
+        return left == right;
+    }
+    if (comparison == FindAttributeNode::Compare::not_equal) {
+        return left != right;
+    }
+    return false;
+}
+
+bool match_attributes(const FindAttributeNode& node,
+                      const ResourceDescriptor& resource) {
+    switch (node.type) {
+        case FindAttributeNode::Type::logical_and:
+            return match_attributes(*node.children[0], resource) &&
+                   match_attributes(*node.children[1], resource);
+        case FindAttributeNode::Type::logical_or:
+            return match_attributes(*node.children[0], resource) ||
+                   match_attributes(*node.children[1], resource);
+        case FindAttributeNode::Type::logical_not:
+            return !match_attributes(*node.children[0], resource);
+        case FindAttributeNode::Type::relation:
+            break;
+    }
+    switch (node.attribute) {
+        case FindAttributeNode::Attribute::intf_type:
+            return compare_number(resource.interface_type, node.compare, node.number);
+        case FindAttributeNode::Attribute::intf_num:
+            return compare_number(resource.interface_number, node.compare, node.number);
+        case FindAttributeNode::Attribute::rsrc_class:
+            return compare_string(resource.resource_class, node.compare, node.text);
+        case FindAttributeNode::Attribute::rsrc_name:
+            return compare_string(resource.canonical_name, node.compare, node.text);
+        case FindAttributeNode::Attribute::asrl_baud:
+            return resource.kind == ResourceKind::asrl_instr &&
+                   compare_number(9600, node.compare, node.number);
+    }
+    return false;
+}
+
 }  // namespace
 
 std::optional<FindExpression> FindExpression::compile(std::string_view expression,
                                                        std::string& error) {
     error.clear();
-    Parser parser(expression);
+    if (expression.empty() || expression.size() >= VI_FIND_BUFLEN) {
+        error = "empty or oversized expression";
+        return std::nullopt;
+    }
+    std::string_view regular = expression;
+    std::string_view attributes;
+    const auto opening = expression.find('{');
+    if (opening != std::string_view::npos) {
+        if (opening == 0 || expression.back() != '}' ||
+            expression.find('{', opening + 1u) != std::string_view::npos ||
+            expression.find('}') != expression.size() - 1u) {
+            error = "malformed attribute-filter delimiter";
+            return std::nullopt;
+        }
+        regular = expression.substr(0, opening);
+        attributes = expression.substr(opening + 1u,
+                                       expression.size() - opening - 2u);
+        if (attributes.empty()) {
+            error = "empty attribute expression";
+            return std::nullopt;
+        }
+    } else if (expression.find('}') != std::string_view::npos) {
+        error = "malformed attribute-filter delimiter";
+        return std::nullopt;
+    }
+    Parser parser(regular);
     auto root = parser.parse(error);
     if (!root) {
         return std::nullopt;
     }
-    return FindExpression(std::move(root));
+    std::shared_ptr<const FindAttributeNode> attribute_root;
+    if (!attributes.empty()) {
+        AttributeParser attribute_parser(attributes);
+        attribute_root = attribute_parser.parse(error);
+        if (!attribute_root) {
+            return std::nullopt;
+        }
+    }
+    return FindExpression(std::move(root), std::move(attribute_root));
 }
 
 bool FindExpression::matches(std::string_view value) const {
     const auto positions = match_node(*root_, value, 0);
-    return positions.contains(value.size());
+    if (!positions.contains(value.size())) {
+        return false;
+    }
+    if (!attributes_) {
+        return true;
+    }
+    const auto resource = parse_resource(value);
+    return resource && match_attributes(*attributes_, *resource);
+}
+
+bool FindExpression::matches(const ResourceDescriptor& resource) const {
+    const auto positions = match_node(*root_, resource.canonical_name, 0);
+    return positions.contains(resource.canonical_name.size()) &&
+           (!attributes_ || match_attributes(*attributes_, resource));
 }
 
 }  // namespace wrvisa

@@ -32,7 +32,7 @@ def tracked_files() -> list[str]:
         if relative == "CMakeLists.txt":
             result.append(relative)
         elif relative.startswith(("include/", "src/", "tests/", "tools/", "cmake/", "examples/")):
-            if path.suffix in {".h", ".c", ".cc", ".cpp", ".py", ".cmake"}:
+            if path.suffix in {".h", ".c", ".cc", ".cpp", ".py", ".cmake", ".json"}:
                 result.append(relative)
             elif path.name == "CMakeLists.txt" or path.suffix == ".in":
                 result.append(relative)
@@ -100,13 +100,45 @@ def main() -> int:
     status_path = ROOT / "docs/status/current.md"
     if status_path.is_file():
         status = status_path.read_text(encoding="utf-8")
-        required_status_terms = ("0.2", "TCPIP", "SOCKET", "ASRL", "NOT_TESTED")
+        required_status_terms = (
+            "0.4",
+            "TCPIP",
+            "SOCKET",
+            "ASRL",
+            "VXI-11",
+            "HiSLIP",
+            "NOT_TESTED",
+        )
         missing_terms = [term for term in required_status_terms if term not in status]
         if missing_terms:
             errors.append(
-                "current status omits the 0.2 transport/platform boundary: "
+                "current status omits the 0.4 transport/platform boundary: "
                 + ", ".join(missing_terms)
             )
+
+        platform_contracts = {
+            "docs/project/requirements.md": (
+                "0.4 无硬件兼容性",
+                "Windows 原生无硬件网络/协议验证",
+                "Windows ASRL runtime",
+            ),
+            "docs/compatibility/visa-compatibility.md": (
+                "资源 alias",
+                "Implemented (Linux/Windows simulator)",
+                "Windows ASRL runtime `NOT_TESTED`",
+            ),
+        }
+        for relative, required_terms in platform_contracts.items():
+            path = ROOT / relative
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8")
+            missing = [term for term in required_terms if term not in text]
+            if missing:
+                errors.append(
+                    f"{relative}: Windows verification boundary is stale: "
+                    + ", ".join(missing)
+                )
 
     licensing_path = ROOT / "docs/project/licensing.md"
     if licensing_path.is_file():

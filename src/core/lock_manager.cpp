@@ -177,6 +177,26 @@ ViAccessMode LockManager::owned_lock_type(ViSession owner,
     return VI_NO_LOCK;
 }
 
+std::uint32_t LockManager::owned_lock_depth(ViSession owner,
+                                            const std::string& resource) const {
+    std::lock_guard lock(mutex_);
+    const auto found = locks_.find(resource);
+    if (found == locks_.end()) {
+        return 0;
+    }
+    if (found->second.type == VI_EXCLUSIVE_LOCK &&
+        found->second.exclusive_owner == owner) {
+        return found->second.exclusive_depth;
+    }
+    if (found->second.type == VI_SHARED_LOCK) {
+        const auto shared = found->second.shared_owners.find(owner);
+        if (shared != found->second.shared_owners.end()) {
+            return shared->second;
+        }
+    }
+    return 0;
+}
+
 void LockManager::notify_waiters() noexcept {
     // Operation cancellation is stored outside LockManager.  Taking this
     // mutex pairs the state change notification with acquire()'s predicate

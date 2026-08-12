@@ -64,7 +64,8 @@ public:
     }
 
     ViStatus write(Operation& operation, ViConstBuf buffer, ViUInt32 count,
-                   ViPUInt32 return_count) final {
+                   ViPUInt32 return_count, WriteOptions options) final {
+        static_cast<void>(options);
         *return_count = 0;
         auto request = std::make_shared<WriteRequest>(
             strand_, operation, std::vector<ViByte>(buffer, buffer + count));

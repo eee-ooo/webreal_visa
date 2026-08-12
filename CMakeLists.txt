@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(webreal_visa VERSION 0.2.0 LANGUAGES C CXX)
+project(webreal_visa VERSION 0.4.0 LANGUAGES C CXX)
 
 include(CTest)
 include(GNUInstallDirs)
@@ -40,8 +40,13 @@ set(WRVISA_SOURCES
     src/resource/find_expression.cpp
     src/runtime/io_runtime.cpp
     src/runtime/operation.cpp
+    src/backends/asio/request_channel.cpp
     src/backends/mock/mock_session.cpp
+    src/backends/hislip/hislip_protocol.cpp
+    src/backends/hislip/hislip_session.cpp
     src/backends/tcp/tcp_session.cpp
+    src/backends/vxi11/vxi11_protocol.cpp
+    src/backends/vxi11/vxi11_session.cpp
     src/backends/serial/serial_session.cpp
     src/platform/serial_discovery.cpp)
 
@@ -128,6 +133,13 @@ if(BUILD_TESTING)
     wrvisa_add_cpp_test(tcp_tests tests/tcp_tests.cpp)
     target_compile_definitions(tcp_tests PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
     target_include_directories(tcp_tests SYSTEM PRIVATE ${WRVISA_ASIO_INCLUDE_DIR})
+    wrvisa_add_cpp_test(protocol_codec_tests tests/protocol_codec_tests.cpp)
+    wrvisa_add_cpp_test(hislip_tests tests/hislip_tests.cpp)
+    target_compile_definitions(hislip_tests PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
+    target_include_directories(hislip_tests SYSTEM PRIVATE ${WRVISA_ASIO_INCLUDE_DIR})
+    wrvisa_add_cpp_test(vxi11_tests tests/vxi11_tests.cpp)
+    target_compile_definitions(vxi11_tests PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
+    target_include_directories(vxi11_tests SYSTEM PRIVATE ${WRVISA_ASIO_INCLUDE_DIR})
     if(UNIX)
         wrvisa_add_cpp_test(serial_tests tests/serial_tests.cpp)
     endif()
@@ -152,6 +164,15 @@ if(BUILD_TESTING)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_docs.py)
         set_tests_properties(docs_consistency PROPERTIES
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME abi_history
+            COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_abi_history.py)
+        if(WRVISA_BUILD_SHARED)
+            add_test(NAME abi_exports
+                COMMAND ${Python3_EXECUTABLE}
+                        ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_exports.py
+                        $<TARGET_FILE:webreal_visa_shared>)
+        endif()
     endif()
 endif()
 
@@ -164,6 +185,7 @@ if(WRVISA_BUILD_SHARED)
     install(TARGETS webreal_visa_shared EXPORT webreal_visaTargets
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()
 if(WRVISA_BUILD_STATIC)

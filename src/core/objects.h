@@ -8,6 +8,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -18,6 +19,11 @@
 
 namespace wrvisa {
 
+struct ResolvedResource {
+    ResourceDescriptor descriptor;
+    std::string alias;
+};
+
 class ResourceManager final : public Object {
 public:
     ResourceManager();
@@ -27,6 +33,12 @@ public:
     std::vector<ViObject> take_children() noexcept;
     bool set_serial_path(ViUInt16 interface_number, std::string path);
     std::optional<std::string> serial_path(ViUInt16 interface_number) const;
+    bool set_tcpip_service_port(std::string host, TcpipProtocol protocol,
+                                ViUInt16 port);
+    std::optional<ViUInt16> tcpip_service_port(
+        const std::string& host, TcpipProtocol protocol) const;
+    bool set_resource_alias(std::string alias, ResourceDescriptor resource);
+    std::optional<ResolvedResource> resolve_resource(std::string_view name) const;
     std::vector<std::string> discoverable_resources() const;
     void close() noexcept override;
 
@@ -34,6 +46,14 @@ private:
     mutable std::mutex mutex_;
     std::unordered_set<ViObject> children_;
     std::map<ViUInt16, std::string> serial_paths_;
+    std::map<std::pair<std::string, TcpipProtocol>, ViUInt16>
+        tcpip_service_ports_;
+    struct AliasEntry {
+        std::string display_name;
+        ResourceDescriptor resource;
+    };
+    std::map<std::string, AliasEntry> aliases_;
+    std::map<std::string, std::string> aliases_by_resource_;
     bool closed_{false};
 };
 

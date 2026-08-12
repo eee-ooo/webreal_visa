@@ -1,5 +1,7 @@
 #include "core/objects.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <utility>
 
@@ -17,6 +19,25 @@ void copy_string(void* destination, const std::string& value) {
                             : static_cast<std::size_t>(VI_FIND_BUFLEN - 1u);
     std::memcpy(output, value.data(), amount);
     output[amount] = '\0';
+}
+
+std::string folded_name(std::string_view value) {
+    std::string result(value);
+    std::transform(result.begin(), result.end(), result.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::toupper(ch));
+    });
+    return result;
+}
+
+bool valid_alias(std::string_view alias) {
+    if (alias.empty() || alias.size() >= VI_FIND_BUFLEN ||
+        parse_resource(alias).has_value()) {
+        return false;
+    }
+    return std::all_of(alias.begin(), alias.end(), [](unsigned char character) {
+        return std::isalnum(character) != 0 || character == '_' ||
+               character == '-' || character == '.';
+    });
 }
 
 class OperationFinish {
@@ -74,6 +95,80 @@ std::optional<std::string> ResourceManager::serial_path(
         return std::nullopt;
     }
     return found->second;
+}
+
+bool ResourceManager::set_tcpip_service_port(std::string host,
+                                             TcpipProtocol protocol,
+                                             ViUInt16 port) {
+    std::lock_guard lock(mutex_);
+    if (closed_ || host.empty() || port == 0 || protocol == TcpipProtocol::none ||
+        protocol == TcpipProtocol::unsupported) {
+        return false;
+    }
+    tcpip_service_ports_[{std::move(host), protocol}] = port;
+    return true;
+}
+
+std::optional<ViUInt16> ResourceManager::tcpip_service_port(
+    const std::string& host, TcpipProtocol protocol) const {
+    std::lock_guard lock(mutex_);
+    const auto found = tcpip_service_ports_.find({host, protocol});
+    if (closed_ || found == tcpip_service_ports_.end()) {
+        return std::nullopt;
+    }
+    return found->second;
+}
+
+bool ResourceManager::set_resource_alias(std::string alias,
+                                         ResourceDescriptor resource) {
+    if (!valid_alias(alias)) {
+        return false;
+    }
+    const auto alias_key = folded_name(alias);
+    const auto resource_key = folded_name(resource.canonical_name);
+    std::lock_guard lock(mutex_);
+    if (closed_) {
+        return false;
+    }
+    if (const auto old = aliases_.find(alias_key); old != aliases_.end()) {
+        aliases_by_resource_.erase(folded_name(old->second.resource.canonical_name));
+    }
+    if (const auto old = aliases_by_resource_.find(resource_key);
+        old != aliases_by_resource_.end()) {
+        aliases_.erase(old->second);
+    }
+    aliases_[alias_key] = AliasEntry{std::move(alias), std::move(resource)};
+    aliases_by_resource_[resource_key] = alias_key;
+    return true;
+}
+
+std::optional<ResolvedResource> ResourceManager::resolve_resource(
+    std::string_view name) const {
+    if (auto direct = parse_resource(name)) {
+        std::lock_guard lock(mutex_);
+        if (closed_) {
+            return std::nullopt;
+        }
+        std::string alias;
+        const auto by_resource = aliases_by_resource_.find(
+            folded_name(direct->canonical_name));
+        if (by_resource != aliases_by_resource_.end()) {
+            const auto found = aliases_.find(by_resource->second);
+            if (found != aliases_.end()) {
+                alias = found->second.display_name;
+            }
+        }
+        return ResolvedResource{std::move(*direct), std::move(alias)};
+    }
+    std::lock_guard lock(mutex_);
+    if (closed_) {
+        return std::nullopt;
+    }
+    const auto found = aliases_.find(folded_name(name));
+    if (found == aliases_.end()) {
+        return std::nullopt;
+    }
+    return ResolvedResource{found->second.resource, found->second.display_name};
 }
 
 std::vector<std::string> ResourceManager::discoverable_resources() const {
@@ -205,7 +300,9 @@ ViStatus SessionObject::read(ViPBuf buffer, ViUInt32 count, ViPUInt32 return_cou
         options.termchar_enabled = termchar_enabled_ == VI_TRUE;
         options.termchar = termchar_;
     }
-    return backend_->read(*operation, buffer, count, return_count, options);
+    const auto status =
+        backend_->read(*operation, buffer, count, return_count, options);
+    return operation->try_complete(status) ? status : operation->result();
 }
 
 ViStatus SessionObject::write(ViConstBuf buffer, ViUInt32 count,
@@ -221,23 +318,54 @@ ViStatus SessionObject::write(ViConstBuf buffer, ViUInt32 count,
         }
         return operation->result();
     }
-    return backend_->write(*operation, buffer, count, return_count);
+    WriteOptions options;
+    {
+        std::lock_guard lock(attributes_mutex_);
+        options.send_end = send_end_enabled_ == VI_TRUE;
+    }
+    const auto status =
+        backend_->write(*operation, buffer, count, return_count, options);
+    return operation->try_complete(status) ? status : operation->result();
 }
 
 ViStatus SessionObject::clear() {
-    return can_access() ? backend_->clear() : VI_ERROR_RSRC_LOCKED;
+    if (!can_access()) {
+        return VI_ERROR_RSRC_LOCKED;
+    }
+    auto operation = begin_operation();
+    OperationFinish finish(*this, operation);
+    const auto status = backend_->clear(*operation);
+    return operation->try_complete(status) ? status : operation->result();
 }
 
 ViStatus SessionObject::flush(ViUInt16 mask) {
-    return can_access() ? backend_->flush(mask) : VI_ERROR_RSRC_LOCKED;
+    if (!can_access()) {
+        return VI_ERROR_RSRC_LOCKED;
+    }
+    auto operation = begin_operation();
+    OperationFinish finish(*this, operation);
+    const auto status = backend_->flush(*operation, mask);
+    return operation->try_complete(status) ? status : operation->result();
 }
 
 ViStatus SessionObject::read_stb(ViPUInt16 status) {
-    return can_access() ? backend_->read_stb(status) : VI_ERROR_RSRC_LOCKED;
+    if (!can_access()) {
+        return VI_ERROR_RSRC_LOCKED;
+    }
+    auto operation = begin_operation();
+    OperationFinish finish(*this, operation);
+    const auto result = backend_->read_stb(*operation, status);
+    return operation->try_complete(result) ? result : operation->result();
 }
 
 ViStatus SessionObject::assert_trigger(ViUInt16 protocol) {
-    return can_access() ? backend_->assert_trigger(protocol) : VI_ERROR_RSRC_LOCKED;
+    if (!can_access()) {
+        return VI_ERROR_RSRC_LOCKED;
+    }
+    auto operation = begin_operation();
+    OperationFinish finish(*this, operation);
+    const auto status = backend_->assert_trigger(*operation, protocol);
+    return operation->try_complete(status) ? status : operation->result();
 }
 
 ViStatus SessionObject::lock(ViAccessMode lock_type, ViUInt32 timeout,
@@ -247,12 +375,22 @@ ViStatus SessionObject::lock(ViAccessMode lock_type, ViUInt32 timeout,
     if (operation->completed()) {
         return operation->result();
     }
-    const auto status = lock_manager().acquire(
+    const auto previous_depth =
+        lock_manager().owned_lock_depth(handle_, descriptor_.canonical_name);
+    auto status = lock_manager().acquire(
         handle_, descriptor_.canonical_name, lock_type, timeout, requested_key,
         access_key, operation.get());
     if (status < VI_SUCCESS) {
         static_cast<void>(operation->try_complete(status));
         return operation->result();
+    }
+    if (previous_depth == 0) {
+        const auto remote_status = backend_->lock(*operation, lock_type, access_key);
+        if (remote_status < VI_SUCCESS) {
+            static_cast<void>(lock_manager().release(handle_,
+                                                     descriptor_.canonical_name));
+            status = remote_status;
+        }
     }
     if (!operation->try_complete(status)) {
         static_cast<void>(lock_manager().release(handle_, descriptor_.canonical_name));
@@ -262,6 +400,23 @@ ViStatus SessionObject::lock(ViAccessMode lock_type, ViUInt32 timeout,
 }
 
 ViStatus SessionObject::unlock() {
+    const auto depth =
+        lock_manager().owned_lock_depth(handle_, descriptor_.canonical_name);
+    if (depth == 0) {
+        return VI_ERROR_SESN_NLOCKED;
+    }
+    if (depth > 1) {
+        return lock_manager().release(handle_, descriptor_.canonical_name);
+    }
+    auto operation = begin_operation();
+    OperationFinish finish(*this, operation);
+    const auto remote_status = backend_->unlock(*operation);
+    if (!operation->try_complete(remote_status)) {
+        return operation->result();
+    }
+    if (remote_status < VI_SUCCESS) {
+        return remote_status;
+    }
     return lock_manager().release(handle_, descriptor_.canonical_name);
 }
 
@@ -324,7 +479,7 @@ ViStatus SessionObject::get_attribute(ViAttr attribute, void* value) const {
             copy_string(value, descriptor_.canonical_name);
             return VI_SUCCESS;
         case VI_ATTR_RSRC_IMPL_VERSION:
-            *static_cast<ViVersion*>(value) = UINT32_C(0x00000200);
+            *static_cast<ViVersion*>(value) = UINT32_C(0x00000400);
             return VI_SUCCESS;
         case VI_ATTR_RSRC_LOCK_STATE:
             *static_cast<ViAccessMode*>(value) =
@@ -388,21 +543,25 @@ ViStatus SessionObject::set_buffer(ViUInt16 mask, ViUInt32 size) {
 }
 
 void SessionObject::close() noexcept {
+    bool had_operations = false;
     {
         std::lock_guard lock(operations_mutex_);
         closed_ = true;
+        had_operations = !operations_.empty();
         for (const auto& [id, operation] : operations_) {
             static_cast<void>(id);
             static_cast<void>(operation->request_cancel());
         }
     }
-    backend_->notify_cancel();
+    if (had_operations) {
+        backend_->notify_cancel();
+    }
+    backend_->close();
     lock_manager().notify_waiters();
     {
         std::unique_lock lock(operations_mutex_);
         operations_condition_.wait(lock, [this] { return operations_.empty(); });
     }
-    backend_->close();
     lock_manager().release_all(handle_, descriptor_.canonical_name);
     if (auto parent = parent_.lock()) {
         parent->remove_child(handle_);

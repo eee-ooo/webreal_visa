@@ -10,8 +10,10 @@
 #include <vector>
 
 #include "backends/mock/mock_session.h"
+#include "backends/hislip/hislip_session.h"
 #include "backends/serial/serial_session.h"
 #include "backends/tcp/tcp_session.h"
+#include "backends/vxi11/vxi11_session.h"
 #include "core/handle_table.h"
 #include "core/lock_manager.h"
 #include "core/objects.h"
@@ -146,6 +148,10 @@ bool valid_open_mode(ViAccessMode mode) {
 
 bool mock_discovery_opted_in(std::string_view expression) {
     constexpr std::string_view expected = WRVISA_MOCK_FIND_EXPRESSION;
+    if (const auto attributes = expression.find('{');
+        attributes != std::string_view::npos) {
+        expression = expression.substr(0, attributes);
+    }
     if (expression.size() != expected.size()) {
         return false;
     }
@@ -180,9 +186,14 @@ ViStatus WRVISA_CALL viGetDefaultRM(ViPSession vi) { return viOpenDefaultRM(vi);
 ViStatus WRVISA_CALL viFindRsrc(ViSession sesn, ViConstString expr, ViPFindList vi,
                                 ViPUInt32 retCnt, ViChar desc[]) {
     return wrvisa::api_guard([&] {
-        if (expr == nullptr ||
-            wrvisa::require_outputs({vi, retCnt, desc}) != VI_SUCCESS) {
+        if (expr == nullptr || desc == nullptr) {
             return VI_ERROR_INV_PARAMETER;
+        }
+        if (vi != nullptr) {
+            *vi = VI_NULL;
+        }
+        if (retCnt != nullptr) {
+            *retCnt = 0;
         }
         auto manager = wrvisa::get_handle<wrvisa::ResourceManager>(
             sesn, wrvisa::ObjectType::resource_manager);
@@ -196,27 +207,34 @@ ViStatus WRVISA_CALL viFindRsrc(ViSession sesn, ViConstString expr, ViPFindList 
         }
         std::vector<std::string> matches;
         for (const auto& resource : manager->discoverable_resources()) {
-            if (expression->matches(resource)) {
+            const auto parsed = wrvisa::parse_resource(resource);
+            if (parsed && expression->matches(*parsed)) {
                 matches.push_back(resource);
             }
         }
-        if (wrvisa::mock_discovery_opted_in(expr) &&
-            expression->matches(WRVISA_MOCK_RESOURCE)) {
+        const auto mock = wrvisa::parse_resource(WRVISA_MOCK_RESOURCE);
+        if (mock && wrvisa::mock_discovery_opted_in(expr) &&
+            expression->matches(*mock)) {
             matches.emplace_back(WRVISA_MOCK_RESOURCE);
         }
         if (matches.empty()) {
             return VI_ERROR_RSRC_NFOUND;
         }
-        auto list = std::make_shared<wrvisa::FindListObject>(manager, sesn, matches);
-        ViObject handle = VI_NULL;
-        const auto status = wrvisa::register_child(
-            manager, list, wrvisa::ObjectType::find_list, handle);
-        if (status < VI_SUCCESS) {
-            return status;
+        if (retCnt != nullptr) {
+            *retCnt = static_cast<ViUInt32>(matches.size());
         }
-        list->set_handle(handle);
-        *vi = handle;
-        *retCnt = static_cast<ViUInt32>(matches.size());
+        if (vi != nullptr) {
+            auto list = std::make_shared<wrvisa::FindListObject>(manager, sesn,
+                                                                matches);
+            ViObject handle = VI_NULL;
+            const auto status = wrvisa::register_child(
+                manager, list, wrvisa::ObjectType::find_list, handle);
+            if (status < VI_SUCCESS) {
+                return status;
+            }
+            list->set_handle(handle);
+            *vi = handle;
+        }
         wrvisa::copy_output(desc, matches.front());
         return VI_SUCCESS;
     });
@@ -248,16 +266,17 @@ ViStatus WRVISA_CALL viParseRsrc(ViSession rmSesn, ViConstRsrc rsrcName,
             wrvisa::require_outputs({intfType, intfNum}) != VI_SUCCESS) {
             return VI_ERROR_INV_PARAMETER;
         }
-        if (!wrvisa::get_handle<wrvisa::ResourceManager>(
-                rmSesn, wrvisa::ObjectType::resource_manager)) {
+        auto manager = wrvisa::get_handle<wrvisa::ResourceManager>(
+            rmSesn, wrvisa::ObjectType::resource_manager);
+        if (!manager) {
             return VI_ERROR_INV_OBJECT;
         }
-        const auto parsed = wrvisa::parse_resource(rsrcName);
-        if (!parsed) {
+        const auto resolved = manager->resolve_resource(rsrcName);
+        if (!resolved) {
             return VI_ERROR_INV_RSRC_NAME;
         }
-        *intfType = parsed->interface_type;
-        *intfNum = parsed->interface_number;
+        *intfType = resolved->descriptor.interface_type;
+        *intfNum = resolved->descriptor.interface_number;
         return VI_SUCCESS;
     });
 }
@@ -268,23 +287,30 @@ ViStatus WRVISA_CALL viParseRsrcEx(ViSession rmSesn, ViConstRsrc rsrcName,
                                    ViChar aliasIfExists[]) {
     return wrvisa::api_guard([&] {
         if (rsrcName == nullptr ||
-            wrvisa::require_outputs({intfType, intfNum, rsrcClass,
-                                     expandedUnaliasedName, aliasIfExists}) != VI_SUCCESS) {
+            wrvisa::require_outputs({intfType, intfNum}) != VI_SUCCESS) {
             return VI_ERROR_INV_PARAMETER;
         }
-        if (!wrvisa::get_handle<wrvisa::ResourceManager>(
-                rmSesn, wrvisa::ObjectType::resource_manager)) {
+        auto manager = wrvisa::get_handle<wrvisa::ResourceManager>(
+            rmSesn, wrvisa::ObjectType::resource_manager);
+        if (!manager) {
             return VI_ERROR_INV_OBJECT;
         }
-        const auto parsed = wrvisa::parse_resource(rsrcName);
-        if (!parsed) {
+        const auto resolved = manager->resolve_resource(rsrcName);
+        if (!resolved) {
             return VI_ERROR_INV_RSRC_NAME;
         }
-        *intfType = parsed->interface_type;
-        *intfNum = parsed->interface_number;
-        wrvisa::copy_output(rsrcClass, parsed->resource_class);
-        wrvisa::copy_output(expandedUnaliasedName, parsed->canonical_name);
-        aliasIfExists[0] = '\0';
+        *intfType = resolved->descriptor.interface_type;
+        *intfNum = resolved->descriptor.interface_number;
+        if (rsrcClass != nullptr) {
+            wrvisa::copy_output(rsrcClass, resolved->descriptor.resource_class);
+        }
+        if (expandedUnaliasedName != nullptr) {
+            wrvisa::copy_output(expandedUnaliasedName,
+                                resolved->descriptor.canonical_name);
+        }
+        if (aliasIfExists != nullptr) {
+            wrvisa::copy_output(aliasIfExists, resolved->alias);
+        }
         return VI_SUCCESS;
     });
 }
@@ -304,22 +330,39 @@ ViStatus WRVISA_CALL viOpen(ViSession sesn, ViConstRsrc name, ViAccessMode mode,
         if (!manager) {
             return VI_ERROR_INV_OBJECT;
         }
-        auto parsed = wrvisa::parse_resource(name);
-        if (!parsed) {
+        auto resolved = manager->resolve_resource(name);
+        if (!resolved) {
             return VI_ERROR_INV_RSRC_NAME;
         }
+        auto parsed = std::move(resolved->descriptor);
         std::unique_ptr<wrvisa::BackendSession> backend;
         ViStatus open_status = VI_SUCCESS;
-        switch (parsed->kind) {
+        switch (parsed.kind) {
             case wrvisa::ResourceKind::project_mock:
                 backend = std::make_unique<wrvisa::MockBackendSession>();
                 break;
             case wrvisa::ResourceKind::tcpip_socket:
                 backend = wrvisa::TcpBackendSession::create(
-                    parsed->host, parsed->port, timeout, open_status);
+                    parsed.host, parsed.port, timeout, open_status);
+                break;
+            case wrvisa::ResourceKind::tcpip_instr:
+                if (parsed.tcpip_protocol == wrvisa::TcpipProtocol::hislip) {
+                    const auto port = manager->tcpip_service_port(
+                        parsed.host, parsed.tcpip_protocol).value_or(4880);
+                    backend = wrvisa::HiSlipBackendSession::create(
+                        parsed.host, parsed.device_name, timeout, open_status, port);
+                } else if (parsed.tcpip_protocol ==
+                           wrvisa::TcpipProtocol::vxi11) {
+                    const auto port = manager->tcpip_service_port(
+                        parsed.host, parsed.tcpip_protocol).value_or(111);
+                    backend = wrvisa::Vxi11BackendSession::create(
+                        parsed.host, parsed.device_name, timeout, open_status, port);
+                } else {
+                    return VI_ERROR_NSUP_OPER;
+                }
                 break;
             case wrvisa::ResourceKind::asrl_instr: {
-                const auto path = manager->serial_path(parsed->interface_number);
+                const auto path = manager->serial_path(parsed.interface_number);
                 if (!path) {
                     return VI_ERROR_INTF_NUM_NCONFIG;
                 }
@@ -333,7 +376,7 @@ ViStatus WRVISA_CALL viOpen(ViSession sesn, ViConstRsrc name, ViAccessMode mode,
             return open_status;
         }
         auto session = std::make_shared<wrvisa::SessionObject>(
-            manager, sesn, std::move(*parsed),
+            manager, sesn, std::move(parsed),
             std::move(backend));
         ViObject handle = VI_NULL;
         auto status = wrvisa::register_child(
@@ -396,7 +439,7 @@ ViStatus WRVISA_CALL viGetAttribute(ViObject vi, ViAttr attrName, void* attrValu
                     wrvisa::copy_output(static_cast<ViChar*>(attrValue), "RM");
                     return VI_SUCCESS;
                 case VI_ATTR_RSRC_IMPL_VERSION:
-                    *static_cast<ViVersion*>(attrValue) = UINT32_C(0x00000200);
+                    *static_cast<ViVersion*>(attrValue) = UINT32_C(0x00000400);
                     return VI_SUCCESS;
                 case VI_ATTR_RSRC_SPEC_VERSION:
                     *static_cast<ViVersion*>(attrValue) = VI_SPEC_VERSION;
@@ -548,6 +591,56 @@ ViStatus WRVISA_CALL wrvisaSetSerialPath(ViSession rmSesn, ViUInt16 intfNum,
         }
         return manager->set_serial_path(intfNum, nativePath) ? VI_SUCCESS
                                                               : VI_ERROR_INV_OBJECT;
+    });
+}
+
+ViStatus WRVISA_CALL wrvisaSetTcpipServicePort(ViSession rmSesn,
+                                               ViConstString host,
+                                               ViUInt16 protocol,
+                                               ViUInt16 port) {
+    return wrvisa::api_guard([&] {
+        if (host == nullptr || host[0] == '\0' || port == 0) {
+            return VI_ERROR_INV_PARAMETER;
+        }
+        wrvisa::TcpipProtocol selected = wrvisa::TcpipProtocol::unsupported;
+        if (protocol == WRVISA_TCPIP_PROTOCOL_VXI11) {
+            selected = wrvisa::TcpipProtocol::vxi11;
+        } else if (protocol == WRVISA_TCPIP_PROTOCOL_HISLIP) {
+            selected = wrvisa::TcpipProtocol::hislip;
+        } else {
+            return VI_ERROR_INV_PROT;
+        }
+        auto manager = wrvisa::get_handle<wrvisa::ResourceManager>(
+            rmSesn, wrvisa::ObjectType::resource_manager);
+        if (!manager) {
+            return VI_ERROR_INV_OBJECT;
+        }
+        return manager->set_tcpip_service_port(host, selected, port)
+                   ? VI_SUCCESS
+                   : VI_ERROR_INV_PARAMETER;
+    });
+}
+
+ViStatus WRVISA_CALL wrvisaSetResourceAlias(ViSession rmSesn,
+                                            ViConstString alias,
+                                            ViConstRsrc resourceName) {
+    return wrvisa::api_guard([&] {
+        if (alias == nullptr || alias[0] == '\0' || resourceName == nullptr ||
+            resourceName[0] == '\0') {
+            return VI_ERROR_INV_PARAMETER;
+        }
+        auto manager = wrvisa::get_handle<wrvisa::ResourceManager>(
+            rmSesn, wrvisa::ObjectType::resource_manager);
+        if (!manager) {
+            return VI_ERROR_INV_OBJECT;
+        }
+        auto resource = wrvisa::parse_resource(resourceName);
+        if (!resource) {
+            return VI_ERROR_INV_RSRC_NAME;
+        }
+        return manager->set_resource_alias(alias, std::move(*resource))
+                   ? VI_SUCCESS
+                   : VI_ERROR_INV_PARAMETER;
     });
 }
 

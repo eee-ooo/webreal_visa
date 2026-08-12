@@ -19,7 +19,8 @@ bool Operation::complete_and_notify(ViStatus status) noexcept {
     std::function<void()> handler;
     {
         std::lock_guard lock(cancel_mutex_);
-        handler = cancel_handler_;
+        handler = std::move(cancel_handler_);
+        cancel_handler_ = nullptr;
     }
     if (handler) {
         try {
@@ -54,9 +55,10 @@ void Operation::set_cancel_handler(std::function<void()> handler) {
     std::function<void()> invoke;
     {
         std::lock_guard lock(cancel_mutex_);
-        cancel_handler_ = std::move(handler);
         if (completed()) {
-            invoke = cancel_handler_;
+            invoke = std::move(handler);
+        } else {
+            cancel_handler_ = std::move(handler);
         }
     }
     if (invoke) {

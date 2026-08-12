@@ -1,7 +1,6 @@
 #include "runtime/io_runtime.h"
 
 #include <algorithm>
-#include <mutex>
 
 namespace wrvisa {
 
@@ -36,15 +35,11 @@ IoRuntime::~IoRuntime() {
 }
 
 std::shared_ptr<IoRuntime> shared_io_runtime() {
-    static std::mutex mutex;
-    static std::weak_ptr<IoRuntime> runtime;
-    std::lock_guard lock(mutex);
-    auto shared = runtime.lock();
-    if (!shared) {
-        shared = std::make_shared<IoRuntime>();
-        runtime = shared;
-    }
-    return shared;
+    // Keep one process-lifetime owner. A weak singleton could release its final
+    // reference from an Asio completion handler, causing IoRuntime::~IoRuntime()
+    // to join the worker thread that is currently executing that handler.
+    static const auto runtime = std::make_shared<IoRuntime>();
+    return runtime;
 }
 
 }  // namespace wrvisa

@@ -207,9 +207,19 @@ int main() {
     refused_acceptor.close();
     const auto refused_resource =
         "TCPIP0::127.0.0.1::" + std::to_string(refused_port) + "::SOCKET";
+    // On Linux, connecting to a closed loopback port is refused instantly; on
+    // Windows the select-reactor notices the refusal only after ~2s (two SYN
+    // retransmits, observed 2044-2049ms on Windows 11), so a 1000ms open
+    // deadline fires first and returns VI_ERROR_TMO instead. Give Windows a
+    // longer deadline so the refusal mapping itself is what gets asserted.
+#ifdef _WIN32
+    constexpr ViUInt32 refused_timeout = 5000;
+#else
+    constexpr ViUInt32 refused_timeout = 1000;
+#endif
     ViSession refused_session = 123;
-    CHECK(viOpen(rm, refused_resource.c_str(), VI_NO_LOCK, 1000, &refused_session) ==
-          VI_ERROR_RSRC_NFOUND);
+    CHECK(viOpen(rm, refused_resource.c_str(), VI_NO_LOCK, refused_timeout,
+                 &refused_session) == VI_ERROR_RSRC_NFOUND);
     CHECK(refused_session == VI_NULL);
 
     const auto resource = "TCPIP0::127.0.0.1::" + std::to_string(server.port()) +

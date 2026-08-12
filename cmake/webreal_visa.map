@@ -29,3 +29,13 @@ WRVISA_0.2 {
     global:
         wrvisaSetSerialPath;
 } WRVISA_0.1;
+
+WRVISA_0.3 {
+    global:
+        wrvisaSetTcpipServicePort;
+} WRVISA_0.2;
+
+WRVISA_0.4 {
+    global:
+        wrvisaSetResourceAlias;
+} WRVISA_0.3;

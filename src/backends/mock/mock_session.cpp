@@ -64,8 +64,10 @@ ViStatus MockBackendSession::read(Operation& operation, ViPBuf buffer, ViUInt32 
     return status;
 }
 
-ViStatus MockBackendSession::write(Operation& operation, ViConstBuf buffer, ViUInt32 count,
-                                   ViPUInt32 return_count) {
+ViStatus MockBackendSession::write(Operation& operation, ViConstBuf buffer,
+                                   ViUInt32 count, ViPUInt32 return_count,
+                                   WriteOptions options) {
+    static_cast<void>(options);
     if (!operation.try_complete(VI_SUCCESS)) {
         if (return_count != nullptr) {
             *return_count = 0;
@@ -79,7 +81,7 @@ ViStatus MockBackendSession::write(Operation& operation, ViConstBuf buffer, ViUI
         request.pop_back();
     }
     const std::string response = request == "*IDN?"
-                                     ? "WEBREAL,WRVISA-MOCK,0001,0.2\n"
+                                     ? "WEBREAL,WRVISA-MOCK,0001,0.4\n"
                                      : std::string(reinterpret_cast<const char*>(buffer), size);
     {
         std::lock_guard lock(mutex_);

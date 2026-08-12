@@ -23,6 +23,8 @@ public:
     void release_all(ViSession owner, const std::string& resource) noexcept;
     bool can_access(ViSession owner, const std::string& resource) const;
     ViAccessMode owned_lock_type(ViSession owner, const std::string& resource) const;
+    std::uint32_t owned_lock_depth(ViSession owner,
+                                   const std::string& resource) const;
     void notify_waiters() noexcept;
 
 private:

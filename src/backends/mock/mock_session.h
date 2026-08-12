@@ -14,7 +14,7 @@ public:
     ViStatus read(Operation& operation, ViPBuf buffer, ViUInt32 count,
                   ViPUInt32 return_count, ReadOptions options) override;
     ViStatus write(Operation& operation, ViConstBuf buffer, ViUInt32 count,
-                   ViPUInt32 return_count) override;
+                   ViPUInt32 return_count, WriteOptions options) override;
     ViStatus clear() override;
     ViStatus flush(ViUInt16 mask) override;
     ViStatus read_stb(ViPUInt16 status) override;

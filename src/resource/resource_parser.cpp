@@ -109,6 +109,24 @@ std::string prefix(std::string_view name, ViUInt16 board) {
     return std::string(name) + std::to_string(board);
 }
 
+TcpipProtocol tcpip_protocol(std::string_view device) {
+    const auto name = upper(device);
+    if (name.rfind("HISLIP", 0) == 0) {
+        if (name.size() == 6u ||
+            !std::all_of(name.begin() + 6, name.end(), [](unsigned char ch) {
+                return std::isalnum(ch) != 0;
+            })) {
+            return TcpipProtocol::unsupported;
+        }
+        return TcpipProtocol::hislip;
+    }
+    if (name.rfind("INST", 0) == 0 || name.rfind("VXI", 0) == 0 ||
+        name.rfind("GPIB", 0) == 0) {
+        return TcpipProtocol::vxi11;
+    }
+    return TcpipProtocol::unsupported;
+}
+
 std::optional<ResourceDescriptor> parse_asrl(const std::vector<std::string_view>& parts) {
     const auto board = parse_prefix(parts[0], "ASRL");
     if (!board || parts.size() > 2 ||
@@ -196,7 +214,7 @@ std::optional<ResourceDescriptor> parse_tcpip(const std::vector<std::string_view
     return ResourceDescriptor{ResourceKind::tcpip_instr, VI_INTF_TCPIP, *board,
                               "INSTR", prefix("TCPIP", *board) + "::" +
                                            display_host + "::" + device + "::INSTR",
-                              std::move(host), 0, std::move(device)};
+                              std::move(host), 0, device, tcpip_protocol(device)};
 }
 
 std::optional<ResourceDescriptor> parse_usb(const std::vector<std::string_view>& parts) {

@@ -23,6 +23,9 @@ jobs:
         run: cmake --build build --config ${{ matrix.build_type }} --parallel
       - name: Test
         run: ctest --test-dir build -C ${{ matrix.build_type }} --output-on-failure
+      - name: Release stability smoke
+        if: matrix.build_type == 'Release'
+        run: ctest --test-dir build -C Release --output-on-failure --repeat until-fail:25 -R "^(resource_tests|api_tests|concurrency_tests|tcp_tests|protocol_codec_tests|hislip_tests|vxi11_tests|serial_tests)$"
       - name: Install
         run: cmake --install build --config ${{ matrix.build_type }} --prefix "${{ github.workspace }}/install"
       - name: Configure consumer example
@@ -31,3 +34,45 @@ jobs:
         run: cmake --build example-build --config ${{ matrix.build_type }} --parallel
       - name: Test consumer example
         run: ctest --test-dir example-build -C ${{ matrix.build_type }} --output-on-failure
+
+  sanitizer:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            build_type: Debug
+          - os: windows-2025
+            build_type: Debug
+          - os: windows-2025
+            build_type: Release
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Configure GCC ASan and UBSan
+        if: runner.os == 'Linux'
+        run: >-
+          cmake -S . -B build -DBUILD_TESTING=ON
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+          -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
+      - name: Configure MSVC ASan
+        if: runner.os == 'Windows'
+        run: >-
+          cmake -S . -B build -A x64 -DBUILD_TESTING=ON
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          "-DCMAKE_C_FLAGS=/fsanitize=address"
+          "-DCMAKE_CXX_FLAGS=/fsanitize=address"
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build_type }} --parallel
+      - name: Test GCC ASan and UBSan
+        if: runner.os == 'Linux'
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build -C ${{ matrix.build_type }} --output-on-failure
+      - name: Test MSVC ASan
+        if: runner.os == 'Windows'
+        run: ctest --test-dir build -C ${{ matrix.build_type }} --output-on-failure

@@ -6,7 +6,7 @@
 
 ## 当前第三方依赖
 
-`0.2` 使用 standalone Asio，具体边界如下：
+`0.2`–`0.4` 使用 standalone Asio，具体边界如下：
 
 | 项目 | 固定版本 | 获取与校验 | 许可证 | 使用方式 |
 |---|---|---|---|---|
@@ -14,7 +14,7 @@
 
 许可证原文保存在 [`third_party/asio/LICENSE_1_0.txt`](../../third_party/asio/LICENSE_1_0.txt)，发行归属说明保存在 [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md)，二者由安装规则随包安装。项目未复制 Asio 实现源码到仓库；默认构建由 CMake 依据固定 URL 与校验值获取。
 
-除上述依赖外，库代码只使用 C/C++ 标准库和操作系统 API。调研项目没有源码被复制或修改，也未链接进入库。
+除上述依赖外，库代码只使用 C/C++ 标准库和操作系统 API。`0.3` 的 XDR、ONC RPC、VXI-11 和 HiSLIP 编解码/状态机，以及 `0.4` 的属性表达式与 alias 解析均依据公开规范独立实现，没有引入系统 SunRPC、libtirpc、liblxi 或 libhislip。调研项目没有源码被复制或修改，也未链接进入库。
 
 ## 引入政策
 

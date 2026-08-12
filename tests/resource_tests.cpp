@@ -44,6 +44,17 @@ int main() {
     CHECK(!wrvisa::parse_resource("GPIB0::31::INSTR"));
     CHECK(!wrvisa::parse_resource("USB0::1234::0x5678::SERIAL"));
     CHECK(!wrvisa::parse_resource("TCPIP0::::INSTR"));
+
+    const auto vxi = wrvisa::parse_resource("TCPIP0::host::inst0::INSTR");
+    CHECK(vxi.has_value());
+    CHECK(vxi->tcpip_protocol == wrvisa::TcpipProtocol::vxi11);
+    const auto hislip = wrvisa::parse_resource("TCPIP0::host::hislip0::INSTR");
+    CHECK(hislip.has_value());
+    CHECK(hislip->tcpip_protocol == wrvisa::TcpipProtocol::hislip);
+    const auto unsupported = wrvisa::parse_resource(
+        "TCPIP0::host::vendor0::INSTR");
+    CHECK(unsupported.has_value());
+    CHECK(unsupported->tcpip_protocol == wrvisa::TcpipProtocol::unsupported);
     CHECK(!wrvisa::parse_resource("TCPIP0::127.0.0.1::0::SOCKET"));
 
     std::string error;
@@ -64,7 +75,37 @@ int main() {
     CHECK(character_class->matches("GPIB2::7::INSTR"));
     CHECK(!character_class->matches("GPIB8::7::INSTR"));
 
-    CHECK(!wrvisa::FindExpression::compile("?*{VI_ATTR_INTF_NUM==0}", error));
+    const auto numeric_filter = wrvisa::FindExpression::compile(
+        "?*{VI_ATTR_INTF_TYPE == 4 && VI_ATTR_INTF_NUM >= 2}", error);
+    CHECK(numeric_filter.has_value());
+    CHECK(numeric_filter->matches(*asrl));
+    CHECK(!numeric_filter->matches(*mock));
+
+    const auto string_filter = wrvisa::FindExpression::compile(
+        "WRVISA0?*{VI_ATTR_RSRC_CLASS == \"INSTR\" && "
+        "VI_ATTR_RSRC_NAME != \"ASRL2::INSTR\"}", error);
+    CHECK(string_filter.has_value());
+    CHECK(string_filter->matches(*mock));
+
+    const auto logical_filter = wrvisa::FindExpression::compile(
+        "?*{!(VI_ATTR_INTF_NUM < 2) || VI_ATTR_INTF_TYPE == 0x8000}", error);
+    CHECK(logical_filter.has_value());
+    CHECK(logical_filter->matches(*asrl));
+    CHECK(logical_filter->matches(*mock));
+
+    const auto baud_filter = wrvisa::FindExpression::compile(
+        "ASRL?*{VI_ATTR_ASRL_BAUD == 9600}", error);
+    CHECK(baud_filter.has_value());
+    CHECK(baud_filter->matches(*asrl));
+
+    CHECK(!wrvisa::FindExpression::compile(
+        "?*{VI_ATTR_TCPIP_PORT == 5025}", error));
+    CHECK(!wrvisa::FindExpression::compile(
+        "?*{VI_ATTR_RSRC_CLASS > \"INSTR\"}", error));
+    CHECK(!wrvisa::FindExpression::compile(
+        "?*{VI_ATTR_INTF_NUM == \"0\"}", error));
+    CHECK(!wrvisa::FindExpression::compile("?*{VI_ATTR_INTF_NUM == 0", error));
+    CHECK(!wrvisa::FindExpression::compile("?*{}", error));
     CHECK(!wrvisa::FindExpression::compile("[abc", error));
     CHECK(!wrvisa::FindExpression::compile("a**", error));
     return 0;
