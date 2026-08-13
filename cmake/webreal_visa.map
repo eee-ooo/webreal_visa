@@ -39,3 +39,9 @@ WRVISA_0.4 {
     global:
         wrvisaSetResourceAlias;
 } WRVISA_0.3;
+
+WRVISA_0.5 {
+    global:
+        wrvisaSetUsbRawConfig;
+        wrvisaUsbControlTransfer;
+} WRVISA_0.4;

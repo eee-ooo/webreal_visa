@@ -2,5 +2,18 @@
 
 include(CMakeFindDependencyMacro)
 find_dependency(Threads)
+if(@WRVISA_HAS_LIBUSB@)
+    set(_wrvisa_saved_module_path "${CMAKE_MODULE_PATH}")
+    list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
+    find_package(LibUSB 1.0.30 QUIET MODULE)
+    set(CMAKE_MODULE_PATH "${_wrvisa_saved_module_path}")
+    unset(_wrvisa_saved_module_path)
+    if(NOT LibUSB_FOUND)
+        set(webreal_visa_FOUND FALSE)
+        set(webreal_visa_NOT_FOUND_MESSAGE
+            "webreal_visa was built with dynamic libusb 1.0.30 support, but a compatible dynamic libusb was not found")
+        return()
+    endif()
+endif()
 include("${CMAKE_CURRENT_LIST_DIR}/webreal_visaTargets.cmake")
 check_required_components(webreal_visa)

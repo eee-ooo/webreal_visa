@@ -1,5 +1,5 @@
 {
-  "project_version": "0.4.0",
+  "project_version": "0.5.0",
   "symbol_versions": {
     "WRVISA_0.1": [
       "viAssertTrigger",
@@ -32,6 +32,10 @@
     ],
     "WRVISA_0.4": [
       "wrvisaSetResourceAlias"
+    ],
+    "WRVISA_0.5": [
+      "wrvisaSetUsbRawConfig",
+      "wrvisaUsbControlTransfer"
     ]
   }
 }

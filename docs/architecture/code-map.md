@@ -6,12 +6,13 @@
 
 | 文件 | 职责 |
 |---|---|
-| `CMakeLists.txt` | 定义 C/C++20 工程、固定或本地 Asio 来源、对象层、共享/静态库、安装规则和全部 CTest 门禁。 |
-| `cmake/webreal_visa.map` | ELF 共享库的 0.1–0.4 版本化导出白名单，防止 STL/内部 C++ 符号泄漏为非预期 ABI。 |
-| `cmake/webreal_visa_abi.json` | 冻结 0.1–0.4 公共符号首次所属版本节点与当前工程版本，作为独立于链接脚本的 ABI 历史基线。 |
-| `cmake/webreal_visaConfig.cmake.in` | 安装后 CMake 包入口，恢复线程依赖并导入命名空间目标。 |
+| `CMakeLists.txt` | 定义 C/C++20 工程、固定或本地 Asio 来源、可选 libusb 1.0.30 动态依赖、对象层、共享/静态库、安装规则和全部 CTest 门禁。 |
+| `cmake/FindLibUSB.cmake` | 查找 libusb 头和动态库，从 `LIBUSB_API_VERSION` 校验最低 1.0.30，并提供 `LibUSB::LibUSB` 导入目标。 |
+| `cmake/webreal_visa.map` | ELF 共享库的 0.1–0.5 版本化导出白名单，防止 STL/内部 C++ 符号泄漏为非预期 ABI。 |
+| `cmake/webreal_visa_abi.json` | 冻结 0.1–0.5 公共符号首次所属版本节点与当前工程版本，作为独立于链接脚本的 ABI 历史基线。 |
+| `cmake/webreal_visaConfig.cmake.in` | 安装后 CMake 包入口，恢复线程与启用构建所需的 libusb 动态依赖，并导入命名空间目标。 |
 | `cmake/uninstall.cmake.in` | 依据 CMake 安装清单生成显式 `uninstall` 目标。 |
-| `.github/workflows/build.yml` | 定义 Ubuntu 24.04 与 Windows 2025 的 Debug/Release、Release 轻量重复压力、安装后静态/共享消费，以及 GCC/MSVC Sanitizer 持续门禁。 |
+| `.github/workflows/build.yml` | 定义 Ubuntu 24.04 与 Windows 2025 的 Debug/Release、Release 轻量重复压力、安装后静态/共享消费，以及 GCC/MSVC Sanitizer 持续门禁；Linux 从校验归档构建动态 libusb 1.0.30 并强制覆盖生产适配器。 |
 
 ## 独立消费示例
 
@@ -26,24 +27,24 @@
 | 文件 | 职责 |
 |---|---|
 | `include/visa.h` | VISA 兼容基础类型、标准数值、导出/调用约定和首批公共函数；是长期 ABI 边界。 |
-| `include/webreal_visa_ext.h` | 项目版本、模拟资源、ASRL 路径、TCPIP 服务端口覆盖与 RM 范围资源 alias 扩展；使用 `wrvisa*`，不污染 `vi*` 命名空间。 |
+| `include/webreal_visa_ext.h` | 项目版本、模拟资源、ASRL 路径、TCPIP 服务端口、资源 alias，以及带尺寸/版本/保留字段的 USB RAW 配置和端点零 control 扩展；使用 `wrvisa*`，不污染 `vi*` 命名空间。 |
 | `include/webreal_visa_plugin.h` | 尺寸协商、版本化的插件/宿主 C ABI 契约；0.1 不包含加载器。 |
 
 ## API 外观
 
 | 文件 | 职责 |
 |---|---|
-| `src/api/visa_api.cpp` | 实现全部首批 `vi*` 与项目扩展入口、可选输出、alias 统一解析、ABI 异常屏障、句柄/状态映射，并确定性选择模拟、TCP Socket、ASRL、VXI-11 或 HiSLIP 后端。 |
+| `src/api/visa_api.cpp` | 实现全部首批 `vi*` 与项目扩展入口、可选输出、alias/RAW 配置解析、版本化 USB control 校验、ABI 异常屏障、句柄/状态映射，并确定性选择模拟、TCP Socket、ASRL、VXI-11、HiSLIP 或已注册 USB provider。 |
 
 ## 核心对象与访问控制
 
 | 文件 | 职责 |
 |---|---|
-| `src/core/backend_session.h` | 后端会话的 I/O、清除、状态、触发和远端锁能力接口及默认不支持行为，使 API/核心不依赖具体传输实现。 |
+| `src/core/backend_session.h` | 后端会话的 I/O、清除、状态、触发、USB control 和远端锁能力接口及默认不支持行为，使 API/核心不依赖具体传输实现。 |
 | `src/core/handle_table.h` | 声明对象类型、对象基类和类型化代际句柄表。 |
 | `src/core/handle_table.cpp` | 句柄编码、短锁查表、删除、代际递增和耗尽退役实现。 |
-| `src/core/objects.h` | 声明 RM、FindList、Session 的所有权、RM 范围 alias/传输覆盖、属性、远端锁挂钩和 operation 注册接口。 |
-| `src/core/objects.cpp` | 实现大小写无关 alias 解析、父子级联关闭、后端立即关闭、I/O/控制委派、取消等待、协议远端锁协调和资源清理。 |
+| `src/core/objects.h` | 声明 RM、FindList、Session 的所有权、RM 范围 alias/传输覆盖/USB RAW 配置、属性、远端锁挂钩和 operation 注册接口。 |
+| `src/core/objects.cpp` | 实现大小写无关 alias 解析、RAW 配置快照、父子级联关闭、后端立即关闭、I/O/控制委派、取消等待、协议远端锁协调和资源清理。 |
 | `src/core/lock_manager.h` | 声明按规范化资源隔离的进程内锁协调器及会话锁深度查询。 |
 | `src/core/lock_manager.cpp` | 实现排他/共享锁、访问键、嵌套计数、超时、会话释放和远端锁边界所需深度判断。 |
 
@@ -81,6 +82,17 @@
 | `src/backends/vxi11/vxi11_session.cpp` | 实现 portmapper、create/destroy link、分块读写、状态字、清除、触发、远端排他锁、abort 与响应排空。 |
 | `src/backends/serial/serial_session.h` | 声明 ASRL 后端、串口配置状态和平台清除能力。 |
 | `src/backends/serial/serial_session.cpp` | 实现本机串口打开、9600-8N1 默认配置、基础线路属性和清除/刷新。 |
+| `src/backends/usb/libusb_provider.h` | 声明内建 libusb provider 注册入口，以及不依赖 libusb 头的 USBTMC/RAW 接口描述符校验、错误映射和可用性测试边界。 |
+| `src/backends/usb/libusb_provider.cpp` | 实现可选 libusb 1.0.30 runtime、USBTMC/USB488 与 RAW 枚举/精确端点匹配、INSTR/RAW 共享 handle/claim、异步双向 bulk/control/interrupt transfer、安全多 transfer 取消、端点 gate 和热拔出连接失效；禁用构建提供明确 stub。 |
+| `src/backends/usb/usb_provider.h` | 声明进程内 USB provider 注册/发现/打开契约，以及同一物理接口共享 claim 生命周期与拔出失效的仲裁器。 |
+| `src/backends/usb/usb_provider.cpp` | 注册可用的内建 libusb provider，并实现 provider 快照与故障隔离、资源规范化去重、INSTR/RAW 打开路由、失败诊断延后和线程安全的接口 lease acquire/release/invalidate。 |
+| `src/backends/usb/usb_transport.h` | 定义不暴露 libusb 类型的 USB interface/alternate setting/端点信息、bulk/control/interrupt、halt 清除、取消与关闭契约，供 USBTMC、USB RAW 和模拟 transport 复用。 |
+| `src/backends/usb/usb_raw_session.h` | 声明由显式 alternate setting、读写传输类型和端点驱动的 USB RAW 后端会话。 |
+| `src/backends/usb/usb_raw_session.cpp` | 实现 RAW bulk/interrupt 读写、终止符/read-ahead、端点零 control、halt 清除、取消成功竞争和失败不提交用户缓冲。 |
+| `src/backends/usb/usbtmc_protocol.h` | 声明 USBTMC DEV_DEP/USB488 TRIGGER 消息、能力、class split transaction、状态字及有界编解码接口。 |
+| `src/backends/usb/usbtmc_protocol.cpp` | 实现 USBTMC 小端消息头、反码、长度/对齐、能力位、clear/abort 状态和 USB488 状态标签的严格校验。 |
+| `src/backends/usb/usbtmc_session.h` | 声明基于可替换 USB transport 的 USBTMC/USB488 会话、bTag、状态标签、能力缓存、read-ahead 与恢复状态。 |
+| `src/backends/usb/usbtmc_session.cpp` | 实现 USBTMC 消息 I/O、短包/read-ahead、class clear/abort split transaction、取消/超时恢复，以及 USB488 状态字/触发/interrupt-IN。 |
 | `src/platform/serial_discovery.h` | 声明当前平台串口发现与路径规范化接口。 |
 | `src/platform/serial_discovery.cpp` | 实现 Linux/macOS `/dev` 发现、Windows COM 枚举和 COM10+ 本机路径转换。 |
 
@@ -95,6 +107,11 @@
 | `tests/concurrency_tests.cpp` | 覆盖超时、`viTerminate`、会话关闭和 RM 级联关闭对阻塞读取的竞争。 |
 | `tests/tcp_tests.cpp` | 以本机 TCP 服务端覆盖连接/属性、终止符、read-ahead、部分超时回收、排队读写独立 deadline、批量取消、阻塞写取消和关闭。 |
 | `tests/protocol_codec_tests.cpp` | 覆盖 XDR/RPC 固定向量与 reply 校验、HiSLIP 精确帧头，以及截断、超限 opaque、错误 XID/状态和畸形长度拒绝。 |
+| `tests/usb_tests.cpp` | 以脚本化 USB transport 覆盖 USBTMC/USB488 固定向量、合法对齐与畸形输入、class clear/abort、状态标签/interrupt-IN、取消/超时恢复、回退 clear、复用与不可恢复关闭。 |
+| `tests/usb_raw_tests.cpp` | 以脚本化 transport 覆盖 RAW bulk/interrupt 读写、终止符/read-ahead、control IN/OUT、端点 halt、配置不匹配及不支持端点。 |
+| `tests/usb_api_tests.cpp` | 以仅存在于测试目标的 USB provider/设备模拟器，经公共 `vi*` 覆盖发现快照、provider 故障隔离、INSTR/RAW 共享 claim、版本化配置/control 错误契约、USBTMC/USB488/RAW I/O、取消后复用、拔出和重连代际隔离。 |
+| `tests/libusb_provider_tests.cpp` | 在启用和禁用构建中覆盖 USBTMC/USB488 与 RAW interface/alternate setting/端点校验、libusb 错误到 VISA 状态映射、内建发现结果规范化及不可见设备的可诊断打开结果。 |
+| `tests/libusb_adapter_tests.cpp` | 以可控 libusb C API 模拟设备驱动生产适配器，经公共 `vi*` 覆盖 INSTR/RAW 枚举、共享 claim、异步 USBTMC/USB488、RAW bulk/interrupt/control、取消 callback、恢复复用、热拔出和最后 release/close。 |
 | `tests/hislip_tests.cpp` | 以 loopback 双通道模拟器和公共 `vi*` 覆盖初始化、分帧 I/O、状态字、触发、共享/排他锁、清除、取消/超时恢复、复用、不支持模式和异步 fatal error 关闭。 |
 | `tests/vxi11_tests.cpp` | 以 loopback portmapper/core/abort 模拟器和公共 `vi*` 覆盖分块 I/O、状态字、触发、远端锁、清除、取消/超时恢复、复用、缺失服务及畸形响应后的部分数据回收。 |
 | `tests/serial_tests.cpp` | 在 POSIX PTY 上覆盖 ASRL 发现/显式映射、属性、双向 I/O、超时/取消复用、清除和刷新。 |

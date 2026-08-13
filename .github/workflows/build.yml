@@ -17,19 +17,38 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Build libusb 1.0.30 (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          curl --fail --location --output "${RUNNER_TEMP}/libusb-1.0.30.tar.bz2" \
+            https://github.com/libusb/libusb/releases/download/v1.0.30/libusb-1.0.30.tar.bz2
+          printf '%s  %s\n' \
+            fea36f34f9156400209595e300840767ab1a385ede1dc7ee893015aea9c6dbaf \
+            "${RUNNER_TEMP}/libusb-1.0.30.tar.bz2" | sha256sum -c -
+          tar -xf "${RUNNER_TEMP}/libusb-1.0.30.tar.bz2" -C "${RUNNER_TEMP}"
+          cd "${RUNNER_TEMP}/libusb-1.0.30"
+          ./configure --prefix="${RUNNER_TEMP}/libusb" \
+            --disable-static --enable-shared --disable-udev
+          make -j2
+          make install
       - name: Configure
-        run: cmake -S . -B build -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        run: >-
+          cmake -S . -B build -DBUILD_TESTING=ON
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DWRVISA_LIBUSB=${{ runner.os == 'Linux' && 'ON' || 'AUTO' }}
+          -DLibUSB_ROOT="${{ runner.temp }}/libusb"
       - name: Build
         run: cmake --build build --config ${{ matrix.build_type }} --parallel
       - name: Test
         run: ctest --test-dir build -C ${{ matrix.build_type }} --output-on-failure
       - name: Release stability smoke
         if: matrix.build_type == 'Release'
-        run: ctest --test-dir build -C Release --output-on-failure --repeat until-fail:25 -R "^(resource_tests|api_tests|concurrency_tests|tcp_tests|protocol_codec_tests|hislip_tests|vxi11_tests|serial_tests)$"
+        run: ctest --test-dir build -C Release --output-on-failure --repeat until-fail:25 -R "^(resource_tests|api_tests|concurrency_tests|tcp_tests|protocol_codec_tests|usb_tests|usb_raw_tests|usb_api_tests|libusb_provider_tests|libusb_adapter_tests|hislip_tests|vxi11_tests|serial_tests)$"
       - name: Install
         run: cmake --install build --config ${{ matrix.build_type }} --prefix "${{ github.workspace }}/install"
       - name: Configure consumer example
-        run: cmake -S examples -B example-build -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH="${{ github.workspace }}/install"
+        run: cmake -S examples -B example-build -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH="${{ github.workspace }}/install;${{ runner.temp }}/libusb"
       - name: Build consumer example
         run: cmake --build example-build --config ${{ matrix.build_type }} --parallel
       - name: Test consumer example
@@ -49,11 +68,28 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Build libusb 1.0.30 (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          curl --fail --location --output "${RUNNER_TEMP}/libusb-1.0.30.tar.bz2" \
+            https://github.com/libusb/libusb/releases/download/v1.0.30/libusb-1.0.30.tar.bz2
+          printf '%s  %s\n' \
+            fea36f34f9156400209595e300840767ab1a385ede1dc7ee893015aea9c6dbaf \
+            "${RUNNER_TEMP}/libusb-1.0.30.tar.bz2" | sha256sum -c -
+          tar -xf "${RUNNER_TEMP}/libusb-1.0.30.tar.bz2" -C "${RUNNER_TEMP}"
+          cd "${RUNNER_TEMP}/libusb-1.0.30"
+          ./configure --prefix="${RUNNER_TEMP}/libusb" \
+            --disable-static --enable-shared --disable-udev
+          make -j2
+          make install
       - name: Configure GCC ASan and UBSan
         if: runner.os == 'Linux'
         run: >-
           cmake -S . -B build -DBUILD_TESTING=ON
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DWRVISA_LIBUSB=ON
+          -DLibUSB_ROOT="${{ runner.temp }}/libusb"
           -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
           -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
           -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"

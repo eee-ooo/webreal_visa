@@ -2,6 +2,7 @@
 #define WRVISA_CORE_BACKEND_SESSION_H
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 #include "runtime/operation.h"
@@ -47,6 +48,23 @@ public:
     virtual ViStatus assert_trigger(Operation& operation, ViUInt16 protocol) {
         static_cast<void>(operation);
         return assert_trigger(protocol);
+    }
+    virtual ViStatus usb_control(Operation& operation,
+                                 std::uint8_t request_type,
+                                 std::uint8_t request,
+                                 std::uint16_t value,
+                                 std::uint16_t index, ViBuf data,
+                                 ViUInt32 count,
+                                 ViPUInt32 return_count) {
+        static_cast<void>(operation);
+        static_cast<void>(request_type);
+        static_cast<void>(request);
+        static_cast<void>(value);
+        static_cast<void>(index);
+        static_cast<void>(data);
+        static_cast<void>(count);
+        *return_count = 0;
+        return VI_ERROR_NSUP_OPER;
     }
     virtual ViStatus lock(Operation& operation, ViAccessMode lock_type,
                           const std::string& access_key) {

@@ -25,7 +25,7 @@ int main() {
     CHECK(viGetAttribute(rm, VI_ATTR_RSRC_CLASS, rm_class.data()) == VI_SUCCESS);
     CHECK(std::string(rm_class.data()) == "RM");
     CHECK(viGetAttribute(rm, VI_ATTR_RSRC_IMPL_VERSION, &version) == VI_SUCCESS);
-    CHECK(version == UINT32_C(0x00000400));
+    CHECK(version == UINT32_C(0x00000500));
     CHECK(viGetAttribute(rm, VI_ATTR_RSRC_SPEC_VERSION, &version) == VI_SUCCESS);
     CHECK(version == VI_SPEC_VERSION);
     CHECK(viGetAttribute(rm, VI_ATTR_USER_DATA, &version) == VI_ERROR_NSUP_ATTR);
@@ -196,7 +196,7 @@ int main() {
     CHECK(viRead(session, buffer.data(), static_cast<ViUInt32>(buffer.size()), &read) ==
           VI_SUCCESS_TERM_CHAR);
     const std::string identity(reinterpret_cast<const char*>(buffer.data()), read);
-    CHECK(identity == "WEBREAL,WRVISA-MOCK,0001,0.4\n");
+    CHECK(identity == "WEBREAL,WRVISA-MOCK,0001,0.5\n");
 
     ViUInt16 stb = 99;
     CHECK(viReadSTB(session, &stb) == VI_SUCCESS);

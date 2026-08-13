@@ -101,6 +101,9 @@ def main() -> int:
     if status_path.is_file():
         status = status_path.read_text(encoding="utf-8")
         required_status_terms = (
+            "0.5",
+            "USB",
+            "USBTMC",
             "0.4",
             "TCPIP",
             "SOCKET",
@@ -112,13 +115,13 @@ def main() -> int:
         missing_terms = [term for term in required_status_terms if term not in status]
         if missing_terms:
             errors.append(
-                "current status omits the 0.4 transport/platform boundary: "
+                "current status omits the 0.5/0.4 transport/platform boundary: "
                 + ", ".join(missing_terms)
             )
 
         platform_contracts = {
             "docs/project/requirements.md": (
-                "0.4 无硬件兼容性",
+                "0.5 USB",
                 "Windows 原生无硬件网络/协议验证",
                 "Windows ASRL runtime",
             ),

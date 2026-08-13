@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(webreal_visa VERSION 0.4.0 LANGUAGES C CXX)
+project(webreal_visa VERSION 0.5.0 LANGUAGES C CXX)
 
 include(CTest)
 include(GNUInstallDirs)
@@ -10,11 +10,33 @@ find_package(Threads REQUIRED)
 
 option(WRVISA_BUILD_SHARED "Build the shared webreal_visa library" ON)
 option(WRVISA_BUILD_STATIC "Build the static webreal_visa library" ON)
+set(WRVISA_LIBUSB "AUTO" CACHE STRING
+    "Build the production libusb transport: AUTO, ON, or OFF")
+set_property(CACHE WRVISA_LIBUSB PROPERTY STRINGS AUTO ON OFF)
 set(WRVISA_ASIO_SOURCE_DIR "" CACHE PATH
     "Existing Asio source tree (the directory containing asio/include/asio.hpp)")
 
 if(NOT WRVISA_BUILD_SHARED AND NOT WRVISA_BUILD_STATIC)
     message(FATAL_ERROR "At least one of WRVISA_BUILD_SHARED/WRVISA_BUILD_STATIC must be ON")
+endif()
+if(NOT WRVISA_LIBUSB MATCHES "^(AUTO|ON|OFF)$")
+    message(FATAL_ERROR "WRVISA_LIBUSB must be AUTO, ON, or OFF")
+endif()
+
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+set(WRVISA_HAS_LIBUSB OFF)
+if(NOT WRVISA_LIBUSB STREQUAL "OFF")
+    find_package(LibUSB 1.0.30 QUIET)
+    if(LibUSB_FOUND)
+        set(WRVISA_HAS_LIBUSB ON)
+        message(STATUS "webreal_visa: production libusb transport enabled")
+    elseif(WRVISA_LIBUSB STREQUAL "ON")
+        message(FATAL_ERROR
+            "WRVISA_LIBUSB=ON requires libusb 1.0.30 headers and dynamic library")
+    else()
+        message(STATUS
+            "webreal_visa: libusb 1.0.30 not found; production USB transport disabled")
+    endif()
 endif()
 
 if(WRVISA_ASIO_SOURCE_DIR)
@@ -45,6 +67,11 @@ set(WRVISA_SOURCES
     src/backends/hislip/hislip_protocol.cpp
     src/backends/hislip/hislip_session.cpp
     src/backends/tcp/tcp_session.cpp
+    src/backends/usb/libusb_provider.cpp
+    src/backends/usb/usb_raw_session.cpp
+    src/backends/usb/usb_provider.cpp
+    src/backends/usb/usbtmc_protocol.cpp
+    src/backends/usb/usbtmc_session.cpp
     src/backends/vxi11/vxi11_protocol.cpp
     src/backends/vxi11/vxi11_session.cpp
     src/backends/serial/serial_session.cpp
@@ -54,6 +81,7 @@ add_library(webreal_visa_objects OBJECT ${WRVISA_SOURCES})
 target_compile_features(webreal_visa_objects PUBLIC cxx_std_20)
 target_compile_definitions(webreal_visa_objects PRIVATE
     WRVISA_BUILDING_LIBRARY
+    WRVISA_HAS_LIBUSB=$<BOOL:${WRVISA_HAS_LIBUSB}>
     ASIO_STANDALONE
     ASIO_NO_DEPRECATED)
 target_include_directories(webreal_visa_objects
@@ -63,6 +91,9 @@ target_include_directories(webreal_visa_objects
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_include_directories(webreal_visa_objects SYSTEM PRIVATE
     ${WRVISA_ASIO_INCLUDE_DIR})
+if(WRVISA_HAS_LIBUSB)
+    target_link_libraries(webreal_visa_objects PRIVATE LibUSB::LibUSB)
+endif()
 set_target_properties(webreal_visa_objects PROPERTIES
     CXX_EXTENSIONS OFF
     POSITION_INDEPENDENT_CODE ON
@@ -80,6 +111,14 @@ if(WRVISA_BUILD_SHARED)
     add_library(webreal_visa_shared SHARED $<TARGET_OBJECTS:webreal_visa_objects>)
     add_library(webreal_visa::visa ALIAS webreal_visa_shared)
     target_link_libraries(webreal_visa_shared PRIVATE Threads::Threads)
+    if(WRVISA_HAS_LIBUSB)
+        # Keep libusb headers out of the public compile interface while making
+        # the exact dynamic dependency available to installed shared-library
+        # consumers. This also prevents an older system libusb with the same
+        # SONAME from being selected while linking a consumer executable.
+        target_link_libraries(webreal_visa_shared PUBLIC
+            "$<LINK_ONLY:LibUSB::LibUSB>")
+    endif()
     if(WIN32)
         target_link_libraries(webreal_visa_shared PRIVATE ws2_32 mswsock)
     endif()
@@ -102,6 +141,9 @@ if(WRVISA_BUILD_STATIC)
     add_library(webreal_visa_static STATIC $<TARGET_OBJECTS:webreal_visa_objects>)
     add_library(webreal_visa::visa_static ALIAS webreal_visa_static)
     target_link_libraries(webreal_visa_static PUBLIC Threads::Threads)
+    if(WRVISA_HAS_LIBUSB)
+        target_link_libraries(webreal_visa_static PRIVATE LibUSB::LibUSB)
+    endif()
     if(WIN32)
         target_link_libraries(webreal_visa_static PUBLIC ws2_32 mswsock)
     endif()
@@ -134,6 +176,14 @@ if(BUILD_TESTING)
     target_compile_definitions(tcp_tests PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
     target_include_directories(tcp_tests SYSTEM PRIVATE ${WRVISA_ASIO_INCLUDE_DIR})
     wrvisa_add_cpp_test(protocol_codec_tests tests/protocol_codec_tests.cpp)
+    wrvisa_add_cpp_test(usb_tests tests/usb_tests.cpp)
+    wrvisa_add_cpp_test(usb_raw_tests tests/usb_raw_tests.cpp)
+    wrvisa_add_cpp_test(usb_api_tests tests/usb_api_tests.cpp)
+    wrvisa_add_cpp_test(libusb_provider_tests tests/libusb_provider_tests.cpp)
+    if(WRVISA_HAS_LIBUSB)
+        wrvisa_add_cpp_test(libusb_adapter_tests tests/libusb_adapter_tests.cpp)
+        target_link_libraries(libusb_adapter_tests PRIVATE LibUSB::LibUSB)
+    endif()
     wrvisa_add_cpp_test(hislip_tests tests/hislip_tests.cpp)
     target_compile_definitions(hislip_tests PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
     target_include_directories(hislip_tests SYSTEM PRIVATE ${WRVISA_ASIO_INCLUDE_DIR})
@@ -181,6 +231,8 @@ install(FILES THIRD_PARTY_NOTICES.md
     DESTINATION ${CMAKE_INSTALL_DATADIR}/webreal_visa)
 install(FILES third_party/asio/LICENSE_1_0.txt
     DESTINATION ${CMAKE_INSTALL_DATADIR}/webreal_visa/licenses/asio)
+install(FILES third_party/libusb/COPYING
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/webreal_visa/licenses/libusb)
 if(WRVISA_BUILD_SHARED)
     install(TARGETS webreal_visa_shared EXPORT webreal_visaTargets
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -208,6 +260,7 @@ install(EXPORT webreal_visaTargets
     NAMESPACE webreal_visa::
     DESTINATION ${WRVISA_PACKAGE_DIR})
 install(FILES
+    cmake/FindLibUSB.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/webreal_visaConfig.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/webreal_visaConfigVersion.cmake
     DESTINATION ${WRVISA_PACKAGE_DIR})

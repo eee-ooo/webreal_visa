@@ -34,7 +34,21 @@ int main() {
 
     const auto usb = wrvisa::parse_resource("USB1::0x1234::0xabcd::SERIAL::0");
     CHECK(usb.has_value());
+    CHECK(usb->kind == ResourceKind::usb_instr);
     CHECK(usb->canonical_name == "USB1::0x1234::0xABCD::SERIAL::0::INSTR");
+    CHECK(usb->usb_vendor_id == 0x1234);
+    CHECK(usb->usb_product_id == 0xABCD);
+    CHECK(usb->usb_serial_number == "SERIAL");
+    CHECK(usb->usb_interface_number == 0);
+
+    const auto usb_raw =
+        wrvisa::parse_resource("usb2::0x0001::0x00fF::raw-device::3::RAW");
+    CHECK(usb_raw.has_value());
+    CHECK(usb_raw->kind == ResourceKind::usb_raw);
+    CHECK(usb_raw->resource_class == "RAW");
+    CHECK(usb_raw->canonical_name ==
+          "USB2::0x0001::0x00FF::raw-device::3::RAW");
+    CHECK(usb_raw->usb_interface_number == 3);
 
     const auto mock = wrvisa::parse_resource("wrvisa0::mock::instr");
     CHECK(mock.has_value());
@@ -43,6 +57,7 @@ int main() {
 
     CHECK(!wrvisa::parse_resource("GPIB0::31::INSTR"));
     CHECK(!wrvisa::parse_resource("USB0::1234::0x5678::SERIAL"));
+    CHECK(!wrvisa::parse_resource("USB0::0x1234::0x5678::SERIAL::3::SOCKET"));
     CHECK(!wrvisa::parse_resource("TCPIP0::::INSTR"));
 
     const auto vxi = wrvisa::parse_resource("TCPIP0::host::inst0::INSTR");

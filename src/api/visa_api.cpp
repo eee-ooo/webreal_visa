@@ -1,9 +1,12 @@
 #include "visa.h"
 
+#include <algorithm>
 #include <cstring>
 #include <cctype>
 #include <exception>
+#include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -13,6 +16,9 @@
 #include "backends/hislip/hislip_session.h"
 #include "backends/serial/serial_session.h"
 #include "backends/tcp/tcp_session.h"
+#include "backends/usb/usb_provider.h"
+#include "backends/usb/usb_raw_session.h"
+#include "backends/usb/usbtmc_session.h"
 #include "backends/vxi11/vxi11_session.h"
 #include "core/handle_table.h"
 #include "core/lock_manager.h"
@@ -163,6 +169,59 @@ bool mock_discovery_opted_in(std::string_view expression) {
         }
     }
     return true;
+}
+
+template <typename Structure>
+ViStatus validate_usb_structure(const Structure& value) {
+    if (value.struct_size < sizeof(Structure)) {
+        return VI_ERROR_INV_SIZE;
+    }
+    if (value.abi_major != WRVISA_USB_RAW_ABI_MAJOR ||
+        value.abi_minor > WRVISA_USB_RAW_ABI_MINOR) {
+        return VI_ERROR_NSUP_OPER;
+    }
+    return VI_SUCCESS;
+}
+
+std::optional<UsbTransferType> usb_transfer_type(std::uint8_t value) {
+    switch (value) {
+        case WRVISA_USB_TRANSFER_NONE:
+            return UsbTransferType::none;
+        case WRVISA_USB_TRANSFER_BULK:
+            return UsbTransferType::bulk;
+        case WRVISA_USB_TRANSFER_INTERRUPT:
+            return UsbTransferType::interrupt;
+        default:
+            return std::nullopt;
+    }
+}
+
+bool valid_usb_endpoint(UsbTransferType type, std::uint8_t endpoint,
+                        bool input) {
+    if (type == UsbTransferType::none) {
+        return endpoint == 0;
+    }
+    const bool endpoint_input = (endpoint & 0x80u) != 0;
+    return (endpoint & 0x70u) == 0 && (endpoint & 0x0fu) != 0 &&
+           endpoint_input == input;
+}
+
+bool zero_usb_raw_reserved(const wrvisa_usb_raw_config_v1& config) {
+    return std::all_of(std::begin(config.reserved8),
+                       std::end(config.reserved8),
+                       [](ViUInt8 value) { return value == 0; }) &&
+           config.flags == 0 &&
+           std::all_of(std::begin(config.reserved),
+                       std::end(config.reserved),
+                       [](ViUInt32 value) { return value == 0; });
+}
+
+bool zero_usb_control_reserved(
+    const wrvisa_usb_control_request_v1& request) {
+    return request.reserved16 == 0 && request.flags == 0 &&
+           std::all_of(std::begin(request.reserved),
+                       std::end(request.reserved),
+                       [](ViUInt32 value) { return value == 0; });
 }
 
 }  // namespace
@@ -369,6 +428,29 @@ ViStatus WRVISA_CALL viOpen(ViSession sesn, ViConstRsrc name, ViAccessMode mode,
                 backend = wrvisa::SerialBackendSession::create(*path, open_status);
                 break;
             }
+            case wrvisa::ResourceKind::usb_instr: {
+                auto transport = wrvisa::open_usb_transport(parsed, timeout,
+                                                            open_status);
+                if (transport) {
+                    backend = std::make_unique<wrvisa::UsbTmcBackendSession>(
+                        std::move(transport));
+                }
+                break;
+            }
+            case wrvisa::ResourceKind::usb_raw:
+                if (const auto configuration =
+                        manager->usb_raw_configuration(parsed.canonical_name)) {
+                    auto transport = wrvisa::open_usb_raw_transport(
+                        parsed, *configuration, timeout, open_status);
+                    if (transport) {
+                        backend =
+                            std::make_unique<wrvisa::UsbRawBackendSession>(
+                                std::move(transport), *configuration);
+                    }
+                } else {
+                    return VI_ERROR_INTF_NUM_NCONFIG;
+                }
+                break;
             default:
                 return VI_ERROR_NSUP_OPER;
         }
@@ -439,7 +521,7 @@ ViStatus WRVISA_CALL viGetAttribute(ViObject vi, ViAttr attrName, void* attrValu
                     wrvisa::copy_output(static_cast<ViChar*>(attrValue), "RM");
                     return VI_SUCCESS;
                 case VI_ATTR_RSRC_IMPL_VERSION:
-                    *static_cast<ViVersion*>(attrValue) = UINT32_C(0x00000400);
+                    *static_cast<ViVersion*>(attrValue) = UINT32_C(0x00000500);
                     return VI_SUCCESS;
                 case VI_ATTR_RSRC_SPEC_VERSION:
                     *static_cast<ViVersion*>(attrValue) = VI_SPEC_VERSION;
@@ -641,6 +723,87 @@ ViStatus WRVISA_CALL wrvisaSetResourceAlias(ViSession rmSesn,
         return manager->set_resource_alias(alias, std::move(*resource))
                    ? VI_SUCCESS
                    : VI_ERROR_INV_PARAMETER;
+    });
+}
+
+ViStatus WRVISA_CALL wrvisaSetUsbRawConfig(
+    ViSession rmSesn, ViConstRsrc resourceName,
+    const wrvisa_usb_raw_config_v1* config) {
+    return wrvisa::api_guard([&] {
+        if (resourceName == nullptr || resourceName[0] == '\0' ||
+            config == nullptr) {
+            return VI_ERROR_INV_PARAMETER;
+        }
+        const auto structure_status = wrvisa::validate_usb_structure(*config);
+        if (structure_status < VI_SUCCESS) {
+            return structure_status;
+        }
+        if (!wrvisa::zero_usb_raw_reserved(*config)) {
+            return VI_ERROR_INV_PARAMETER;
+        }
+        const auto read_type =
+            wrvisa::usb_transfer_type(config->read_transfer_type);
+        const auto write_type =
+            wrvisa::usb_transfer_type(config->write_transfer_type);
+        if (!read_type || !write_type ||
+            !wrvisa::valid_usb_endpoint(*read_type, config->read_endpoint,
+                                        true) ||
+            !wrvisa::valid_usb_endpoint(*write_type, config->write_endpoint,
+                                        false)) {
+            return VI_ERROR_INV_PARAMETER;
+        }
+        auto manager = wrvisa::get_handle<wrvisa::ResourceManager>(
+            rmSesn, wrvisa::ObjectType::resource_manager);
+        if (!manager) {
+            return VI_ERROR_INV_OBJECT;
+        }
+        const auto resolved = manager->resolve_resource(resourceName);
+        if (!resolved) {
+            return VI_ERROR_INV_RSRC_NAME;
+        }
+        if (resolved->descriptor.kind != wrvisa::ResourceKind::usb_raw) {
+            return VI_ERROR_NSUP_OPER;
+        }
+        const wrvisa::UsbRawConfiguration configuration{
+            config->alternate_setting, *read_type, config->read_endpoint,
+            *write_type, config->write_endpoint};
+        return manager->set_usb_raw_configuration(
+                   resolved->descriptor.canonical_name, configuration)
+                   ? VI_SUCCESS
+                   : VI_ERROR_INV_OBJECT;
+    });
+}
+
+ViStatus WRVISA_CALL wrvisaUsbControlTransfer(
+    ViSession vi, const wrvisa_usb_control_request_v1* request, ViBuf data,
+    ViUInt32 count, ViPUInt32 retCnt) {
+    return wrvisa::api_guard([&] {
+        if (retCnt != nullptr) {
+            *retCnt = 0;
+        }
+        if (request == nullptr || retCnt == nullptr ||
+            (count != 0 && data == nullptr)) {
+            return VI_ERROR_INV_PARAMETER;
+        }
+        if (count > UINT16_MAX) {
+            return VI_ERROR_INV_SIZE;
+        }
+        const auto structure_status = wrvisa::validate_usb_structure(*request);
+        if (structure_status < VI_SUCCESS) {
+            return structure_status;
+        }
+        if (!wrvisa::zero_usb_control_reserved(*request) ||
+            (request->request_type & 0x60u) == 0x60u ||
+            (request->request_type & 0x1fu) > 3u) {
+            return VI_ERROR_INV_PARAMETER;
+        }
+        auto session = wrvisa::get_handle<wrvisa::SessionObject>(
+            vi, wrvisa::ObjectType::session);
+        return session ? session->usb_control(
+                             request->request_type, request->request,
+                             request->value, request->index, data, count,
+                             retCnt)
+                       : VI_ERROR_INV_OBJECT;
     });
 }
 

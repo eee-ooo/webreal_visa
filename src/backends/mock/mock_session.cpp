@@ -81,7 +81,7 @@ ViStatus MockBackendSession::write(Operation& operation, ViConstBuf buffer,
         request.pop_back();
     }
     const std::string response = request == "*IDN?"
-                                     ? "WEBREAL,WRVISA-MOCK,0001,0.4\n"
+                                     ? "WEBREAL,WRVISA-MOCK,0001,0.5\n"
                                      : std::string(reinterpret_cast<const char*>(buffer), size);
     {
         std::lock_guard lock(mutex_);

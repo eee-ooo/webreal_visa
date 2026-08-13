@@ -15,6 +15,7 @@
 
 #include "core/backend_session.h"
 #include "core/handle_table.h"
+#include "backends/usb/usb_transport.h"
 #include "resource/resource_parser.h"
 
 namespace wrvisa {
@@ -38,6 +39,10 @@ public:
     std::optional<ViUInt16> tcpip_service_port(
         const std::string& host, TcpipProtocol protocol) const;
     bool set_resource_alias(std::string alias, ResourceDescriptor resource);
+    bool set_usb_raw_configuration(std::string resource,
+                                   UsbRawConfiguration configuration);
+    std::optional<UsbRawConfiguration> usb_raw_configuration(
+        const std::string& resource) const;
     std::optional<ResolvedResource> resolve_resource(std::string_view name) const;
     std::vector<std::string> discoverable_resources() const;
     void close() noexcept override;
@@ -46,6 +51,7 @@ private:
     mutable std::mutex mutex_;
     std::unordered_set<ViObject> children_;
     std::map<ViUInt16, std::string> serial_paths_;
+    std::vector<std::string> usb_resources_;
     std::map<std::pair<std::string, TcpipProtocol>, ViUInt16>
         tcpip_service_ports_;
     struct AliasEntry {
@@ -54,6 +60,7 @@ private:
     };
     std::map<std::string, AliasEntry> aliases_;
     std::map<std::string, std::string> aliases_by_resource_;
+    std::map<std::string, UsbRawConfiguration> usb_raw_configurations_;
     bool closed_{false};
 };
 
@@ -104,6 +111,10 @@ public:
     ViStatus flush(ViUInt16 mask);
     ViStatus read_stb(ViPUInt16 status);
     ViStatus assert_trigger(ViUInt16 protocol);
+    ViStatus usb_control(std::uint8_t request_type, std::uint8_t request,
+                         std::uint16_t value, std::uint16_t index,
+                         ViBuf data, ViUInt32 count,
+                         ViPUInt32 return_count);
     ViStatus lock(ViAccessMode lock_type, ViUInt32 timeout,
                   ViConstKeyId requested_key, std::string& access_key);
     ViStatus unlock();

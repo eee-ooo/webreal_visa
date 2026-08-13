@@ -134,7 +134,8 @@ std::optional<ResourceDescriptor> parse_asrl(const std::vector<std::string_view>
         return std::nullopt;
     }
     return ResourceDescriptor{ResourceKind::asrl_instr, VI_INTF_ASRL, *board, "INSTR",
-                              prefix("ASRL", *board) + "::INSTR", {}, 0, {}};
+                              prefix("ASRL", *board) + "::INSTR", {}, 0, {},
+                              TcpipProtocol::none, 0, 0, {}, 0};
 }
 
 std::optional<ResourceDescriptor> parse_gpib(const std::vector<std::string_view>& parts) {
@@ -145,7 +146,7 @@ std::optional<ResourceDescriptor> parse_gpib(const std::vector<std::string_view>
     if (parts.size() == 2 && upper(parts[1]) == "INTFC") {
         return ResourceDescriptor{ResourceKind::gpib_intfc, VI_INTF_GPIB, *board,
                                   "INTFC", prefix("GPIB", *board) + "::INTFC",
-                                  {}, 0, {}};
+                                  {}, 0, {}, TcpipProtocol::none, 0, 0, {}, 0};
     }
     const auto primary = parse_decimal(parts[1], 30);
     if (!primary) {
@@ -171,7 +172,8 @@ std::optional<ResourceDescriptor> parse_gpib(const std::vector<std::string_view>
     }
     canonical += "::INSTR";
     return ResourceDescriptor{ResourceKind::gpib_instr, VI_INTF_GPIB, *board,
-                              "INSTR", std::move(canonical), {}, 0, {}};
+                              "INSTR", std::move(canonical), {}, 0, {},
+                              TcpipProtocol::none, 0, 0, {}, 0};
 }
 
 std::optional<ResourceDescriptor> parse_tcpip(const std::vector<std::string_view>& parts) {
@@ -198,7 +200,8 @@ std::optional<ResourceDescriptor> parse_tcpip(const std::vector<std::string_view
                                   "SOCKET", prefix("TCPIP", *board) + "::" +
                                                 display_host + "::" +
                                                 std::to_string(*port) + "::SOCKET",
-                                  std::move(host), *port, {}};
+                                  std::move(host), *port, {}, TcpipProtocol::none,
+                                  0, 0, {}, 0};
     }
     std::string device = "inst0";
     if (parts.size() == 3 && upper(parts[2]) != "INSTR") {
@@ -214,7 +217,8 @@ std::optional<ResourceDescriptor> parse_tcpip(const std::vector<std::string_view
     return ResourceDescriptor{ResourceKind::tcpip_instr, VI_INTF_TCPIP, *board,
                               "INSTR", prefix("TCPIP", *board) + "::" +
                                            display_host + "::" + device + "::INSTR",
-                              std::move(host), 0, device, tcpip_protocol(device)};
+                              std::move(host), 0, device, tcpip_protocol(device),
+                              0, 0, {}, 0};
 }
 
 std::optional<ResourceDescriptor> parse_usb(const std::vector<std::string_view>& parts) {
@@ -227,9 +231,11 @@ std::optional<ResourceDescriptor> parse_usb(const std::vector<std::string_view>&
     if (!vendor || !product || parts[3].empty()) {
         return std::nullopt;
     }
+    std::string resource_class = "INSTR";
     ViUInt16 interface_number = 0;
     bool has_interface = false;
-    if (parts.size() >= 5 && upper(parts[4]) != "INSTR") {
+    if (parts.size() >= 5 && upper(parts[4]) != "INSTR" &&
+        upper(parts[4]) != "RAW") {
         const auto parsed = parse_decimal(parts[4], std::numeric_limits<ViUInt16>::max());
         if (!parsed) {
             return std::nullopt;
@@ -237,20 +243,30 @@ std::optional<ResourceDescriptor> parse_usb(const std::vector<std::string_view>&
         interface_number = *parsed;
         has_interface = true;
     }
-    const auto expected_size = has_interface ? 6u : 5u;
-    if (parts.size() == expected_size && upper(parts.back()) != "INSTR") {
-        return std::nullopt;
+    const auto class_index = has_interface ? 5u : 4u;
+    if (parts.size() > class_index) {
+        resource_class = upper(parts[class_index]);
+        if (resource_class != "INSTR" && resource_class != "RAW") {
+            return std::nullopt;
+        }
     }
-    if (parts.size() > expected_size || (parts.size() == 6 && !has_interface)) {
+    if (parts.size() > class_index + 1u || (parts.size() == 6 && !has_interface)) {
         return std::nullopt;
     }
     std::ostringstream canonical;
     canonical << "USB" << *board << "::0x" << std::uppercase << std::hex
               << std::setw(4) << std::setfill('0') << *vendor << "::0x" << std::setw(4)
               << *product << "::" << parts[3] << std::dec << "::" << interface_number
-              << "::INSTR";
-    return ResourceDescriptor{ResourceKind::usb_instr, VI_INTF_USB, *board, "INSTR",
-                              canonical.str(), {}, 0, {}};
+              << "::" << resource_class;
+    ResourceDescriptor descriptor{
+        resource_class == "RAW" ? ResourceKind::usb_raw : ResourceKind::usb_instr,
+        VI_INTF_USB, *board, resource_class, canonical.str(), {}, 0, {},
+        TcpipProtocol::none, 0, 0, {}, 0};
+    descriptor.usb_vendor_id = *vendor;
+    descriptor.usb_product_id = *product;
+    descriptor.usb_serial_number = std::string(parts[3]);
+    descriptor.usb_interface_number = interface_number;
+    return descriptor;
 }
 
 }  // namespace
@@ -261,7 +277,8 @@ std::optional<ResourceDescriptor> parse_resource(std::string_view value) {
     }
     if (upper(value) == WRVISA_MOCK_RESOURCE) {
         return ResourceDescriptor{ResourceKind::project_mock, WRVISA_INTF_MOCK, 0,
-                                  "INSTR", WRVISA_MOCK_RESOURCE, {}, 0, {}};
+                                  "INSTR", WRVISA_MOCK_RESOURCE, {}, 0, {},
+                                  TcpipProtocol::none, 0, 0, {}, 0};
     }
     const auto parts = split(value);
     if (parts.empty()) {

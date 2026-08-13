@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "core/lock_manager.h"
+#include "backends/usb/usb_provider.h"
 #include "platform/serial_discovery.h"
 #include "webreal_visa_ext.h"
 
@@ -54,7 +55,9 @@ private:
 }  // namespace
 
 ResourceManager::ResourceManager()
-    : Object(ObjectType::resource_manager), serial_paths_(discover_serial_ports()) {}
+    : Object(ObjectType::resource_manager),
+      serial_paths_(discover_serial_ports()),
+      usb_resources_(discover_usb_resources()) {}
 
 bool ResourceManager::add_child(ViObject child) {
     std::lock_guard lock(mutex_);
@@ -142,6 +145,26 @@ bool ResourceManager::set_resource_alias(std::string alias,
     return true;
 }
 
+bool ResourceManager::set_usb_raw_configuration(
+    std::string resource, UsbRawConfiguration configuration) {
+    std::lock_guard lock(mutex_);
+    if (closed_) {
+        return false;
+    }
+    usb_raw_configurations_[std::move(resource)] = configuration;
+    return true;
+}
+
+std::optional<UsbRawConfiguration> ResourceManager::usb_raw_configuration(
+    const std::string& resource) const {
+    std::lock_guard lock(mutex_);
+    const auto found = usb_raw_configurations_.find(resource);
+    if (closed_ || found == usb_raw_configurations_.end()) {
+        return std::nullopt;
+    }
+    return found->second;
+}
+
 std::optional<ResolvedResource> ResourceManager::resolve_resource(
     std::string_view name) const {
     if (auto direct = parse_resource(name)) {
@@ -177,11 +200,15 @@ std::vector<std::string> ResourceManager::discoverable_resources() const {
     if (closed_) {
         return resources;
     }
-    resources.reserve(serial_paths_.size());
+    resources.reserve(serial_paths_.size() + usb_resources_.size());
     for (const auto& [number, path] : serial_paths_) {
         static_cast<void>(path);
         resources.push_back("ASRL" + std::to_string(number) + "::INSTR");
     }
+    resources.insert(resources.end(), usb_resources_.begin(), usb_resources_.end());
+    std::sort(resources.begin(), resources.end());
+    resources.erase(std::unique(resources.begin(), resources.end()),
+                    resources.end());
     return resources;
 }
 
@@ -368,6 +395,25 @@ ViStatus SessionObject::assert_trigger(ViUInt16 protocol) {
     return operation->try_complete(status) ? status : operation->result();
 }
 
+ViStatus SessionObject::usb_control(
+    std::uint8_t request_type, std::uint8_t request, std::uint16_t value,
+    std::uint16_t index, ViBuf data, ViUInt32 count,
+    ViPUInt32 return_count) {
+    if (!can_access()) {
+        return VI_ERROR_RSRC_LOCKED;
+    }
+    auto operation = begin_operation();
+    OperationFinish finish(*this, operation);
+    if (operation->completed()) {
+        *return_count = 0;
+        return operation->result();
+    }
+    const auto status = backend_->usb_control(
+        *operation, request_type, request, value, index, data, count,
+        return_count);
+    return operation->try_complete(status) ? status : operation->result();
+}
+
 ViStatus SessionObject::lock(ViAccessMode lock_type, ViUInt32 timeout,
                              ViConstKeyId requested_key, std::string& access_key) {
     auto operation = begin_operation(timeout);
@@ -479,7 +525,7 @@ ViStatus SessionObject::get_attribute(ViAttr attribute, void* value) const {
             copy_string(value, descriptor_.canonical_name);
             return VI_SUCCESS;
         case VI_ATTR_RSRC_IMPL_VERSION:
-            *static_cast<ViVersion*>(value) = UINT32_C(0x00000400);
+            *static_cast<ViVersion*>(value) = UINT32_C(0x00000500);
             return VI_SUCCESS;
         case VI_ATTR_RSRC_LOCK_STATE:
             *static_cast<ViAccessMode*>(value) =
