@@ -1,8 +1,10 @@
 #include <array>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <future>
 #include <iostream>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -74,6 +76,12 @@ public:
 
     std::uint16_t port() const { return acceptor_.local_endpoint().port(); }
     bool triggered() const noexcept { return triggered_; }
+    bool wait_for_timeout_request() {
+        std::unique_lock lock(timeout_mutex_);
+        return timeout_condition_.wait_for(
+            lock, std::chrono::seconds(2),
+            [this] { return timeout_request_received_; });
+    }
 
 private:
     void run() {
@@ -178,6 +186,11 @@ private:
         CHECK(std::string(frame.payload.begin(), frame.payload.end()) ==
               "TIMEOUT\n");
         const auto timeout_message_id = frame.parameter;
+        {
+            std::lock_guard lock(timeout_mutex_);
+            timeout_request_received_ = true;
+        }
+        timeout_condition_.notify_one();
         frame = read_frame(asynchronous_);
         CHECK(frame.type == MessageType::async_device_clear);
         write_frame(asynchronous_, MessageType::async_device_clear_acknowledge, 0,
@@ -201,6 +214,9 @@ private:
     asio::ip::tcp::socket asynchronous_{context_};
     std::thread worker_;
     bool triggered_{false};
+    std::mutex timeout_mutex_;
+    std::condition_variable timeout_condition_;
+    bool timeout_request_received_{false};
 };
 
 class UnsupportedModeServer final {
@@ -376,6 +392,7 @@ int main() {
     CHECK(std::string(reinterpret_cast<char*>(buffer.data()), count) ==
           "AGAIN-OK\n");
     CHECK(write_text(session, "TIMEOUT\n") == VI_SUCCESS);
+    CHECK(simulator.wait_for_timeout_request());
     CHECK(viSetAttribute(session, VI_ATTR_TMO_VALUE, 30) == VI_SUCCESS);
     count = 99;
     CHECK(viRead(session, buffer.data(), buffer.size(), &count) == VI_ERROR_TMO);
