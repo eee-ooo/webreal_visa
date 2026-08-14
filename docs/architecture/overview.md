@@ -69,7 +69,7 @@ USB RAW 使用单独的 `UsbRawBackendSession`，不会将厂商请求加入标�
 
 0.6 的 GPIB 第一切片把 `GpibProvider`、`GpibTransport` 与 `GpibBackendSession` 分层。资源描述符保存 board、主地址、可选次地址和 `INSTR`/`INTFC` 身份；RM 保存创建时发现快照，显式打开优先使用该 RM 为 board 配置的 provider，否则使用通用注册表。transport 显式报告 send-end、device clear、trigger 与 serial poll 能力，并以 `end` 表示 EOI；会话按半双工串行化事务，复用 operation deadline、取消、终止符、read-ahead 和失败不提交规则。`INTFC` 暂不开放控制器会话。第二切片按 ADR-0011 拒绝把 GPL linux-gpib 直接链接、延迟链接或 `dlopen` 进核心库。
 
-第三切片的 `PrologixProvider` 通过版本化 RM 配置显式选择串口或 TCP，不做发现。进程池以连接类型、原样 endpoint 和 port 为身份；同一身份的多 RM/board/session 共享 controller，并把地址、EOI、命令/数据发送和响应排空包在一个 deadline 感知事务中。每次连接先禁用 EEPROM 保存，再固定 mode/auto/EOS/EOT/read timeout 并校验版本；失败或取消关闭连接，下次完整初始化。读取在交还 controller 前有界排空到单字节 EOT，因此调用方必须选择不会出现在响应中的标记；endpoint 别名、跨进程仲裁、任意二进制响应、真实硬件和 Windows runtime 均不在已验证范围。
+第三切片的 `PrologixProvider` 通过版本化 RM 配置显式选择串口或 TCP，不做发现。进程池以连接类型、原样 endpoint 和 port 为身份；同一身份的多 RM/board/session 共享 controller，并把地址、EOI、命令/数据发送和响应排空包在一个 deadline 感知事务中。每次连接先禁用 EEPROM 保存，再固定 mode/auto/EOS/EOT/read timeout 并校验版本；失败或取消关闭连接，下次完整初始化。读取在交还 controller 前有界排空到单字节 EOT，因此调用方必须选择不会出现在响应中的标记。Linux 已覆盖 TCP loopback 与 POSIX PTY，Windows 原生已覆盖 `prologix_tests` TCP 受控端点；endpoint 别名、跨进程仲裁、任意二进制响应、真实硬件和 Windows Prologix 串口 runtime 均不在已验证范围。
 
 ## 锁
 

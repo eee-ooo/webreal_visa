@@ -2,7 +2,7 @@
 
 更新时间：2026-08-14
 
-当前开发版本：`0.6.0`。GPIB 第一切片已交付通用资源/provider/transport 与模拟公共 API 闭环；第二切片因 GPL 边界拒绝 linux-gpib 进程内集成。2026-08-14 第三切片完成显式配置的 Prologix 串口/TCP 生产 Provider，设计见 [`ADR-0012`](../decisions/0012-prologix-controller-boundary.md)，证据见 [`Prologix 切片记录`](../progress/2026-08-14-stage-0.6-prologix-slice.md)。当前生产代码已通过 Linux TCP loopback 与 POSIX PTY 受控端点验证，但真实 Prologix/GPIB 仪器、0.4–0.6 Windows 原生 runtime、真实 USB 与 macOS 继续保持 `NOT_TESTED`。
+当前开发版本：`0.6.0`。GPIB 第一切片已交付通用资源/provider/transport 与模拟公共 API 闭环；第二切片因 GPL 边界拒绝 linux-gpib 进程内集成。2026-08-14 第三切片完成显式配置的 Prologix 串口/TCP 生产 Provider，设计见 [`ADR-0012`](../decisions/0012-prologix-controller-boundary.md)，实现证据见 [`Prologix 切片记录`](../progress/2026-08-14-stage-0.6-prologix-slice.md)。当前生产代码已通过 Linux TCP loopback 与 POSIX PTY 受控端点验证，随后完成当前 27 项 ABI 的完整 Linux CMake/CTest/Sanitizer/安装消费收口，证据见 [`0.6 Linux CMake 收口记录`](../progress/2026-08-14-stage-0.6-linux-cmake-validation.md)；同日又在 Windows 11 原生完成 0.4–0.6 无硬件复验：Debug/Release 与 MSVC ASan Debug/Release 四套全量 CTest 均为 19/19，Release 高风险 13 用例各连续 25 轮通过，安装消费 2/2、`tcp_query` 本机回显 1/1，PE 导出 27 项且 ABI 6 节点门禁通过，证据见 [`0.6 Windows 原生记录`](../progress/2026-08-14-stage-0.6-windows.md)。真实 Prologix/GPIB 仪器、Windows libusb/ASRL runtime、真实 USB 与 macOS 继续保持 `NOT_TESTED`。
 
 ## 0.6 进行中
 
@@ -15,7 +15,7 @@
 - 写入转义 CR/LF/ESC/`+`；读取先把整条响应有界排空到 EOT，再交给会话终止符/read-ahead。clear、trigger 和 serial poll 映射到官方命令。
 - 排队等待服从 operation deadline；活动事务超时、取消、超限、协议或连接错误会关闭通道，下一事务重连并完整初始化，不复用未知状态。
 - TCP 生产路径经 loopback 覆盖共享、主次地址、转义、EOI、控制命令、队列 timeout、超限/取消恢复；串口生产路径经 POSIX PTY 覆盖实际打开、初始化、写入和 EOT 读取。
-- `GPIB[board]::INTFC`、控制器发现、endpoint 别名去重、跨进程仲裁和任意二进制响应未实现；单字节 EOT 若出现在仪器响应中无法消歧。真实硬件和 Windows runtime 仍为 `NOT_TESTED`。
+- `GPIB[board]::INTFC`、控制器发现、endpoint 别名去重、跨进程仲裁和任意二进制响应未实现；单字节 EOT 若出现在仪器响应中无法消歧。Windows Prologix TCP 受控端点已随 `prologix_tests` 原生运行；真实硬件、Windows libusb/ASRL/Prologix 串口 runtime 仍为 `NOT_TESTED`。
 
 ## 0.5 进行中
 
@@ -55,7 +55,8 @@
 ## Linux 已验证
 
 - 0.6 第一切片在 GCC 13.3、libusb 启用时 Debug/Release 全量各 20/20，GCC ASan/UBSan/LSan（`detect_leaks=1`）20/20；显式关闭 libusb 的 Debug 为 19/19。`gpib_tests` 覆盖测试 provider 的公共 API 闭环、取消/超时和复用，并在 Release 连续 1000/1000 轮通过。
-- 0.6 第三切片在 GCC 13.3 以 `-fPIC`、CMake 等价高告警和 `-Werror` 手工编译全部生产源；TCP loopback、POSIX PTY、通用 GPIB 与 C/C++ 头回归通过，通用 GPIB 与两个 Prologix 测试在 ASan/UBSan/LSan 下通过。ELF ABI、文档与 ABI 历史门禁确认 27 项/89 文件/6 节点；MinGW-w64 GCC 13 编译生产源并链接测试，PE 导出为 27 项。当前容器缺少 CMake，因此未把手工结果表述为完整 CTest/安装消费或 Windows runtime。
+- 当前提交 `19b4242` 已在 Ubuntu 24.04.4 x86_64、GCC 13.3、CMake 3.28.3 和动态 libusb 1.0.30 下完成 0.6 Linux 收口：libusb 启用时 Debug/Release 各 22/22，显式关闭 libusb 的 Debug 为 21/21，GCC ASan/UBSan/LSan（`detect_leaks=1`）为 22/22；Release 的 `gpib_tests`、`prologix_tests`、`prologix_serial_tests` 各连续 1000/1000 轮通过。全新安装后的静态/共享纯 C 消费 2/2，安装产物动态链接 libusb，ELF 精确导出 27 项且 ABI 历史为 6 个节点。详见 [`0.6 Linux CMake 收口记录`](../progress/2026-08-14-stage-0.6-linux-cmake-validation.md)。
+- 0.6 第三切片初始收口曾在 GCC 13.3 以 `-fPIC`、CMake 等价高告警和 `-Werror` 手工编译全部生产源；TCP loopback、POSIX PTY、通用 GPIB 与 C/C++ 头回归通过，通用 GPIB 与两个 Prologix 测试在 ASan/UBSan/LSan 下通过。ELF ABI、文档与 ABI 历史门禁确认 27 项/89 文件/6 节点；MinGW-w64 GCC 13 编译生产源并链接测试，PE 导出为 27 项。该手工证据现由上述完整 CMake 门禁补强，但交叉产物仍不能替代 Windows 原生 runtime。
 - 0.6 第一切片的历史 Release 证据：全新安装后独立纯 C 静态/共享消费 2/2，当时 ELF ABI 历史与精确导出均为 26 项；MinGW-w64 GCC 13、`WRVISA_LIBUSB=OFF` 当时编译全部库和测试目标，PE 亦为 26 项。该证据早于第 27 个 Prologix 配置导出，且交叉产物未运行，不能替代当前安装消费或 Windows 原生证据。
 - 0.4 GCC 13.3 Debug/Release 全量各 14/14；GCC ASan/UBSan/LSan（`detect_leaks=1`）14/14。属性表达式正反例、alias 三入口一致性、可选输出和 ABI 历史均包含在内。
 - 0.4 Release 全新安装后静态/共享纯 C 消费 2/2；ELF 恰好导出 21 个 `vi*` 与三个 `wrvisa*`，共 24 项，0.1–0.4 版本节点历史一致。
@@ -67,7 +68,16 @@
 - gcov/gcovr 对第一方 `src/` 的当前基线为行 73.8%、函数 89.4%、分支 62.1%；新增公共 API 参数/句柄/属性/锁边界和 XDR/RPC/HiSLIP 截断、畸形长度测试后，行覆盖从 71.6% 提升，分支覆盖从 59.1% 提升。覆盖率是缺口导航，不作为兼容完成声明。
 - Release 全新安装到临时前缀后，独立纯 C 源码消费工程的静态 `mock_query` 与共享 `mock_query_shared` 均构建并运行，2/2 通过；安装后的 ELF 动态导出仍严格只有 21 个 `vi*`、`wrvisaSetSerialPath` 和 `wrvisaSetTcpipServicePort`，0.1/0.2/0.3 版本节点继承正确。
 
-## Windows 已验证（2026-08-12，无硬件）
+## Windows 已验证（2026-08-14，无硬件）
+
+- 基线 `19b4242`，VS 2022 Community（MSVC 19.44.35228 / x64 / SDK 10.0.26100）、CMake 3.28.1、Python 3.14.5，锁定 Asio 1.38.2 本地源码；本机无 libusb，`WRVISA_LIBUSB=AUTO` 关闭生产 USB 适配器（与 CI Windows 一致），`libusb_adapter_tests` 不构建，`serial_tests`/`prologix_serial_tests` 为 UNIX-only。
+- Debug、Release 与 MSVC `/fsanitize=address`（Debug/Release 各一）四套 CTest 均为 19/19：16 个代码测试（资源/核心/API/并发/raw TCP/codec/GPIB/Prologix/USB 系列/HiSLIP/VXI-11/C/C++ 头）+ 文档/ABI 三个门禁；ASan 未报告地址类内存错误，本轮没有执行与 Linux LSan 等价的独立泄漏门禁。
+- Release 稳定性：13 个高风险用例（CI 同款列表加入 `prologix_tests`）各连续 25 轮共 325 次测试进程调用无首次失败，总用时 89.63 秒。
+- Release 安装到仓库外前缀：独立纯 C 静态 `mock_query` 与共享 `mock_query_shared` 消费 2/2；`tcp_query TCPIP0::127.0.0.1::45123::SOCKET` 连接本机回显服务器输出 `ACME Windows TCP INSTR`，1/1。
+- `dumpbin /exports` 确认 DLL 恰好导出 27 项（21 个 `vi*` + 6 个 `wrvisa*`，含 `WRVISA_0.6` 节点 `wrvisaSetPrologixController`），与 `abi_exports`/`abi_history` 门禁一致。
+- 本轮环境注意（非产品缺陷）：MSBuild `/m` 并行在本机静默失败需串行构建；默认 Anaconda Python 3.6.4 过老导致门禁脚本语法错误，改指 Python 3.14.5；安装前缀放构建树内会被 `validate_docs.py` 扫描到而报 broken link；MSVC ASan runtime DLL 需加入 PATH。详见 [`0.6 Windows 原生记录`](../progress/2026-08-14-stage-0.6-windows.md)。
+
+## Windows 0.3 历史（2026-08-12，无硬件）
 
 - VS 2022 Community（MSVC 19.44.35207 / x64 / SDK 10.0.26100），锁定 Asio 1.38.2 源码（SHA-256 一致）。Debug、Release 与 MSVC `/fsanitize=address`（Debug/Release 各一）四套 CTest 均为 11/11（`serial_tests` 为 UNIX-only 不构建）；ASan 未报告地址类内存错误，本轮没有执行与 Linux LSan 等价的独立泄漏门禁。
 - Release 稳定性：`concurrency_tests`、`tcp_tests`、`vxi11_tests`、`hislip_tests` 各连续 500 轮，`api_tests`、`protocol_codec_tests` 各连续 1000 轮，共 4000 次测试进程调用无首次失败。
@@ -77,16 +87,16 @@
 
 ## 当前限制与发布阻塞
 
-- 0.4–0.6 新增 alias/API、属性查找、USB/GPIB、当前 27 项 PE 导出和安装消费尚未在 Windows 原生重跑，状态为 `NOT_TESTED`；旧 0.3 Windows DLL 的 23 项结果不能替代本轮验证。
+- 0.4–0.6 新增 alias/API、属性查找、USB 模拟系列、GPIB/Prologix 与当前 27 项 PE 导出和安装消费已于 2026-08-14 在 Windows 11 原生无硬件复验通过（四套 19/19）；Windows libusb runtime（本机无 libusb）、Windows ASRL runtime（`serial_tests` UNIX-only）与真实 USB/GPIB 硬件仍为 `NOT_TESTED`。
 - Windows 原生网络/协议无硬件门禁已完成；Windows ASRL runtime、真实串口电气行为和真实仪器互操作仍为 `NOT_TESTED`。任何交叉构建只能证明可编译，不能替代 runtime 结果。
 - VXI-11/HiSLIP 只与仓库内受控 loopback 模拟器互操作；第三方真实仪器、不同厂商错误行为和网络异常组合为 `NOT_TESTED`。
 - HiSLIP 当前只实现 1.x 同步模式；overlap、HiSLIP 2、TLS/加密和生产 DNS-SD/mDNS 发现未实现。初始化发送的 `WR` vendor ID 是临时项目值，尚未按 IVI VPP-9 注册，不能宣称正式互操作认证。
 - VXI-11 远端协议只有排他锁；VISA 共享锁仍只协调当前进程。跨进程锁、完整属性过滤、持久化系统 alias/完整资源类型和稳定版二进制兼容承诺未实现。
-- USB 0.5 的五个无硬件代码切片已经完成，但不得被描述为真实 USB 硬件验证；真实 USBTMC/USB488/RAW 仍为 `NOT_TESTED`。GPIB 0.6 已有受限 Prologix 生产路径，但真实控制器/仪器、Windows runtime、EOT 冲突响应、endpoint 别名与跨进程并发仍未验证或不支持；linux-gpib 继续被许可边界拒绝，NI-488.2、`INTFC` 会话、厂商 VISA、动态插件加载和异步 job API 未实现。ASRL 的 mark/space parity、DTR/DSR 流控和完整 VISA 串口属性仍不完整。
+- USB 0.5 的五个无硬件代码切片已经完成，但不得被描述为真实 USB 硬件验证；真实 USBTMC/USB488/RAW 与 Windows libusb runtime 仍为 `NOT_TESTED`。GPIB 0.6 已有受限 Prologix 生产路径，Windows 原生门禁已覆盖通用 GPIB 和 Prologix TCP 受控端点；但真实控制器/仪器、Windows Prologix 串口 runtime、EOT 冲突响应、endpoint 别名与跨进程并发仍未验证或不支持；linux-gpib 继续被许可边界拒绝，NI-488.2、`INTFC` 会话、厂商 VISA、动态插件加载和异步 job API 未实现。ASRL 的 mark/space parity、DTR/DSR 流控和完整 VISA 串口属性仍不完整。
 - macOS 构建/运行未验证。ThreadSanitizer 在当前容器因运行时内存映射不兼容而无法启动，不得记为通过。
 - 当前 Linux 环境没有 Clang、Valgrind、clang-tidy/cppcheck，且无 sudo 非交互安装权限；本轮相应矩阵未执行，不得记为通过。GCC Sanitizer 不能替代 ThreadSanitizer 或不同编译器验证。
 - 版权主体仍为 `[TBD_COPYRIGHT_HOLDER]`；正式项目 `LICENSE` 和对外发布被阻塞。Asio 与 libusb 第三方许可证及声明已随仓库保留。
 
 ## 下一步
 
-下一阶段优先取得一台真实 Prologix 控制器和已知响应的 GPIB 仪器，验证串口/TCP、主次地址、EOI、clear/trigger/spoll、超时恢复及部署端点规则；并在具备 CMake 的环境补跑完整 CTest/Sanitizer/安装消费，在 Windows 原生复验 27 项 ABI 与串口/TCP runtime。NI-488.2 保持为后续 Windows 专属独立切片，不与本轮混合。
+Linux 与 Windows 的 0.6 当前无硬件软件范围均已通过完整 CMake/CTest、持续运行、安装消费与 ELF/PE/ABI 门禁；内存安全门禁分别为 Linux GCC ASan/UBSan/LSan 和 Windows MSVC ASan。下一阶段优先取得一台真实 Prologix 控制器和已知响应的 GPIB 仪器，验证串口/TCP、主次地址、EOI、clear/trigger/spoll、超时恢复及部署端点规则；Windows 侧待具备条件后补 libusb runtime 与真实串口 runtime。真实 USB 设备和远端 CI 证据仍按可用条件补齐。NI-488.2 保持为后续 Windows 专属独立切片，不与本轮混合。
