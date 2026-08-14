@@ -14,7 +14,7 @@ set(WRVISA_LIBUSB "AUTO" CACHE STRING
     "Build the production libusb transport: AUTO, ON, or OFF")
 set_property(CACHE WRVISA_LIBUSB PROPERTY STRINGS AUTO ON OFF)
 set(WRVISA_ASIO_SOURCE_DIR "" CACHE PATH
-    "Existing Asio source tree (the directory containing asio/include/asio.hpp)")
+    "Existing Asio source tree (the directory containing include/asio.hpp)")
 
 if(NOT WRVISA_BUILD_SHARED AND NOT WRVISA_BUILD_STATIC)
     message(FATAL_ERROR "At least one of WRVISA_BUILD_SHARED/WRVISA_BUILD_STATIC must be ON")
@@ -40,30 +40,20 @@ if(NOT WRVISA_LIBUSB STREQUAL "OFF")
 endif()
 
 if(WRVISA_ASIO_SOURCE_DIR)
-    set(WRVISA_ASIO_INCLUDE_DIR "${WRVISA_ASIO_SOURCE_DIR}/asio/include")
+    set(WRVISA_ASIO_INCLUDE_DIR "${WRVISA_ASIO_SOURCE_DIR}/include")
 else()
     FetchContent_Declare(wrvisa_asio
         URL https://codeload.github.com/chriskohlhoff/asio/tar.gz/8806a6803cde7054c3049d3666d3ec36786568c5
         URL_HASH SHA256=ca7f6c14f2bf91e61c7e81fb693f2f8fc86f93e85520d5fc7fd035d0f666bb35
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
     FetchContent_MakeAvailable(wrvisa_asio)
-    set(WRVISA_ASIO_INCLUDE_DIR "${wrvisa_asio_SOURCE_DIR}/asio/include")
+    # asio/include is a symlink in the upstream archive. Use the canonical
+    # directory so header availability does not depend on symlink extraction.
+    set(WRVISA_ASIO_INCLUDE_DIR "${wrvisa_asio_SOURCE_DIR}/include")
 endif()
 if(NOT EXISTS "${WRVISA_ASIO_INCLUDE_DIR}/asio.hpp")
-    message(FATAL_ERROR "WRVISA_ASIO_SOURCE_DIR does not contain asio/include/asio.hpp")
+    message(FATAL_ERROR "WRVISA_ASIO_SOURCE_DIR does not contain include/asio.hpp")
 endif()
-
-function(wrvisa_target_include_asio target)
-    if(MSVC)
-        # CMake maps SYSTEM includes to /external:I for MSVC. Resolution of a
-        # fetched header through that switch has varied between hosted MSVC/CMake
-        # combinations, so keep this private dependency on the regular /I path.
-        target_include_directories(${target} PRIVATE ${WRVISA_ASIO_INCLUDE_DIR})
-    else()
-        target_include_directories(${target} SYSTEM PRIVATE
-            ${WRVISA_ASIO_INCLUDE_DIR})
-    endif()
-endfunction()
 
 set(WRVISA_SOURCES
     src/api/visa_api.cpp
@@ -104,7 +94,8 @@ target_include_directories(webreal_visa_objects
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-wrvisa_target_include_asio(webreal_visa_objects)
+target_include_directories(webreal_visa_objects SYSTEM PRIVATE
+    ${WRVISA_ASIO_INCLUDE_DIR})
 if(WRVISA_HAS_LIBUSB)
     target_link_libraries(webreal_visa_objects PRIVATE LibUSB::LibUSB)
 endif()
@@ -188,12 +179,12 @@ if(BUILD_TESTING)
     wrvisa_add_cpp_test(concurrency_tests tests/concurrency_tests.cpp)
     wrvisa_add_cpp_test(tcp_tests tests/tcp_tests.cpp)
     target_compile_definitions(tcp_tests PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
-    wrvisa_target_include_asio(tcp_tests)
+    target_include_directories(tcp_tests SYSTEM PRIVATE ${WRVISA_ASIO_INCLUDE_DIR})
     wrvisa_add_cpp_test(protocol_codec_tests tests/protocol_codec_tests.cpp)
     wrvisa_add_cpp_test(gpib_tests tests/gpib_tests.cpp)
     wrvisa_add_cpp_test(prologix_tests tests/prologix_tests.cpp)
     target_compile_definitions(prologix_tests PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
-    wrvisa_target_include_asio(prologix_tests)
+    target_include_directories(prologix_tests SYSTEM PRIVATE ${WRVISA_ASIO_INCLUDE_DIR})
 
     wrvisa_add_cpp_test(usb_tests tests/usb_tests.cpp)
     wrvisa_add_cpp_test(usb_raw_tests tests/usb_raw_tests.cpp)
@@ -205,10 +196,10 @@ if(BUILD_TESTING)
     endif()
     wrvisa_add_cpp_test(hislip_tests tests/hislip_tests.cpp)
     target_compile_definitions(hislip_tests PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
-    wrvisa_target_include_asio(hislip_tests)
+    target_include_directories(hislip_tests SYSTEM PRIVATE ${WRVISA_ASIO_INCLUDE_DIR})
     wrvisa_add_cpp_test(vxi11_tests tests/vxi11_tests.cpp)
     target_compile_definitions(vxi11_tests PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
-    wrvisa_target_include_asio(vxi11_tests)
+    target_include_directories(vxi11_tests SYSTEM PRIVATE ${WRVISA_ASIO_INCLUDE_DIR})
     if(UNIX)
         wrvisa_add_cpp_test(prologix_serial_tests tests/prologix_serial_tests.cpp)
         wrvisa_add_cpp_test(serial_tests tests/serial_tests.cpp)
