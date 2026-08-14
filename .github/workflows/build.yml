@@ -3,6 +3,7 @@ name: build
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -12,11 +13,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2025]
+        os: [ubuntu-24.04, windows-2022]
         build_type: [Debug, Release]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - name: Build libusb 1.0.30 (Linux)
         if: runner.os == 'Linux'
         shell: bash
@@ -44,7 +48,7 @@ jobs:
         run: ctest --test-dir build -C ${{ matrix.build_type }} --output-on-failure
       - name: Release stability smoke
         if: matrix.build_type == 'Release'
-        run: ctest --test-dir build -C Release --output-on-failure --repeat until-fail:25 -R "^(resource_tests|api_tests|concurrency_tests|tcp_tests|protocol_codec_tests|gpib_tests|usb_tests|usb_raw_tests|usb_api_tests|libusb_provider_tests|libusb_adapter_tests|hislip_tests|vxi11_tests|serial_tests)$"
+        run: ctest --test-dir build -C Release --output-on-failure --repeat until-fail:25 -R "^(resource_tests|api_tests|concurrency_tests|tcp_tests|protocol_codec_tests|gpib_tests|prologix_tests|prologix_serial_tests|usb_tests|usb_raw_tests|usb_api_tests|libusb_provider_tests|libusb_adapter_tests|hislip_tests|vxi11_tests|serial_tests)$"
       - name: Install
         run: cmake --install build --config ${{ matrix.build_type }} --prefix "${{ github.workspace }}/install"
       - name: Configure consumer example
@@ -61,13 +65,16 @@ jobs:
         include:
           - os: ubuntu-24.04
             build_type: Debug
-          - os: windows-2025
+          - os: windows-2022
             build_type: Debug
-          - os: windows-2025
+          - os: windows-2022
             build_type: Release
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - name: Build libusb 1.0.30 (Linux)
         if: runner.os == 'Linux'
         shell: bash
@@ -103,6 +110,23 @@ jobs:
           "-DCMAKE_CXX_FLAGS=/fsanitize=address"
       - name: Build
         run: cmake --build build --config ${{ matrix.build_type }} --parallel
+      - name: Add MSVC ASan runtime to PATH
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsInstall = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.ASAN -property installationPath
+          if (-not $vsInstall) {
+            throw "Visual Studio with the MSVC ASan component was not found"
+          }
+          $runtime = Get-ChildItem (Join-Path $vsInstall "VC\Tools\MSVC") -Recurse -File -Filter "clang_rt.asan*_dynamic-x86_64.dll" |
+            Where-Object { $_.DirectoryName -match 'Hostx64\\x64$' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $runtime) {
+            throw "The x64 MSVC ASan runtime DLL was not found"
+          }
+          $runtime.DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Test GCC ASan and UBSan
         if: runner.os == 'Linux'
         env:

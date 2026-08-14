@@ -93,6 +93,7 @@
 - HiSLIP 当前只实现 1.x 同步模式；overlap、HiSLIP 2、TLS/加密和生产 DNS-SD/mDNS 发现未实现。初始化发送的 `WR` vendor ID 是临时项目值，尚未按 IVI VPP-9 注册，不能宣称正式互操作认证。
 - VXI-11 远端协议只有排他锁；VISA 共享锁仍只协调当前进程。跨进程锁、完整属性过滤、持久化系统 alias/完整资源类型和稳定版二进制兼容承诺未实现。
 - USB 0.5 的五个无硬件代码切片已经完成，但不得被描述为真实 USB 硬件验证；真实 USBTMC/USB488/RAW 与 Windows libusb runtime 仍为 `NOT_TESTED`。GPIB 0.6 已有受限 Prologix 生产路径，Windows 原生门禁已覆盖通用 GPIB 和 Prologix TCP 受控端点；但真实控制器/仪器、Windows Prologix 串口 runtime、EOT 冲突响应、endpoint 别名与跨进程并发仍未验证或不支持；linux-gpib 继续被许可边界拒绝，NI-488.2、`INTFC` 会话、厂商 VISA、动态插件加载和异步 job API 未实现。ASRL 的 mark/space parity、DTR/DSR 流控和完整 VISA 串口属性仍不完整。
+- GitHub Actions 已对齐当前 0.6 无硬件门禁：固定 Ubuntu 24.04 与保留 MSVC 2022 的 Windows 2022 runner，Debug/Release、Linux libusb 1.0.30、GCC/MSVC Sanitizer、安装消费和 Release 25 轮稳定性矩阵均已配置，Prologix TCP/PTY 已纳入相应平台的重复测试。工作流支持 push、pull request 与手工触发，但仓库尚无 remote，也没有远端 runner 日志，因此 CI 实际运行仍为 `NOT_TESTED`。
 - macOS 构建/运行未验证。ThreadSanitizer 在当前容器因运行时内存映射不兼容而无法启动，不得记为通过。
 - 当前 Linux 环境没有 Clang、Valgrind、clang-tidy/cppcheck，且无 sudo 非交互安装权限；本轮相应矩阵未执行，不得记为通过。GCC Sanitizer 不能替代 ThreadSanitizer 或不同编译器验证。
 - 版权主体仍为 `[TBD_COPYRIGHT_HOLDER]`；正式项目 `LICENSE` 和对外发布被阻塞。Asio 与 libusb 第三方许可证及声明已随仓库保留。

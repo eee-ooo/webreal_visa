@@ -12,7 +12,7 @@
 | `cmake/webreal_visa_abi.json` | 冻结 27 个 0.1–0.6 公共符号首次所属版本节点，作为独立于链接脚本的 ABI 历史基线。 |
 | `cmake/webreal_visaConfig.cmake.in` | 安装后 CMake 包入口，恢复线程与启用构建所需的 libusb 动态依赖，并导入命名空间目标。 |
 | `cmake/uninstall.cmake.in` | 依据 CMake 安装清单生成显式 `uninstall` 目标。 |
-| `.github/workflows/build.yml` | 定义 Ubuntu 24.04 与 Windows 2025 的 Debug/Release、Release 轻量重复压力、安装后静态/共享消费，以及 GCC/MSVC Sanitizer 持续门禁；Linux 从校验归档构建动态 libusb 1.0.30 并强制覆盖生产适配器。 |
+| `.github/workflows/build.yml` | 定义 Ubuntu 24.04 与固定 MSVC 2022 基线的 Windows 2022 Debug/Release、含 Prologix TCP/PTY 的 Release 轻量重复压力、安装后静态/共享消费，以及 GCC/MSVC Sanitizer 持续门禁；Linux 从校验归档构建动态 libusb 1.0.30，Windows 显式定位 ASan runtime。支持 push、pull request 和手工触发，远端首次运行前仍不能记为 CI 通过。 |
 
 ## 独立消费示例
 
