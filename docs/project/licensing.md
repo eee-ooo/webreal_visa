@@ -15,7 +15,7 @@
 
 许可证原文保存在 [`third_party/asio/LICENSE_1_0.txt`](../../third_party/asio/LICENSE_1_0.txt) 和 [`third_party/libusb/COPYING`](../../third_party/libusb/COPYING)，发行归属说明保存在 [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md)，均由安装规则随包安装。项目未复制 Asio 或 libusb 实现源码到仓库；默认构建由 CMake 依据固定 URL 与校验值获取 Asio，并仅探测系统/用户提供的 libusb 动态库。CI 使用官方校验归档临时构建 libusb，不把其产物提交或并入库。
 
-除上述依赖外，当前可构建产物只使用 C/C++ 标准库和操作系统 API。`0.3` 的 XDR、ONC RPC、VXI-11 和 HiSLIP 编解码/状态机，`0.4` 的属性表达式与 alias，以及 `0.5` 的 USBTMC/USB488、USB RAW、provider 和适配逻辑均依据公开规范与 libusb 公共 API 独立实现，没有复制第三方实现。
+除上述依赖外，当前可构建产物只使用 C/C++ 标准库和操作系统 API。`0.3` 的 XDR、ONC RPC、VXI-11 和 HiSLIP 编解码/状态机，`0.4` 的属性表达式与 alias，`0.5` 的 USBTMC/USB488、USB RAW、provider 和适配逻辑，以及 `0.6` 第一切片的 GPIB provider/transport/session 均依据公开规范或既有项目抽象独立实现，没有复制第三方实现。linux-gpib 当前仅列为 GPL 研究来源，没有链接、复制或派生进入生产库。
 
 `WRVISA_LIBUSB=AUTO` 在缺少 1.0.30 开发包时关闭生产 USB 适配器，`ON` 则配置失败，`OFF` 明确构建无 libusb 版本。启用时共享库动态链接 libusb；静态 `webreal_visa` 归档不包含 libusb 对象，安装导出的静态和共享 CMake 目标以 `LINK_ONLY` 要求消费者链接可替换动态库，同时不传播 libusb include 到编译接口。发行者仍须提供 LGPL 文本、归属、可替换动态库和适用的重新链接条件；本说明不替代正式法律审核。
 

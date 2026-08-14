@@ -16,10 +16,20 @@ int main() {
     const auto gpib = wrvisa::parse_resource("GPIB::4::7");
     CHECK(gpib.has_value());
     CHECK(gpib->canonical_name == "GPIB0::4::7::INSTR");
+    CHECK(gpib->gpib_primary_address == 4);
+    CHECK(gpib->gpib_has_secondary_address);
+    CHECK(gpib->gpib_secondary_address == 7);
+
+    const auto gpib_primary = wrvisa::parse_resource("gpib2::30::instr");
+    CHECK(gpib_primary.has_value());
+    CHECK(gpib_primary->canonical_name == "GPIB2::30::INSTR");
+    CHECK(gpib_primary->gpib_primary_address == 30);
+    CHECK(!gpib_primary->gpib_has_secondary_address);
 
     const auto intfc = wrvisa::parse_resource("gpib3::intfc");
     CHECK(intfc.has_value());
     CHECK(intfc->resource_class == "INTFC");
+    CHECK(intfc->kind == ResourceKind::gpib_intfc);
 
     const auto tcpip = wrvisa::parse_resource("TCPIP::example.test::5025::SOCKET");
     CHECK(tcpip.has_value());

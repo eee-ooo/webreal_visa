@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.25)
 project(webreal_visa_consumer_example LANGUAGES C CXX)
 
 include(CTest)
-find_package(webreal_visa 0.5 CONFIG REQUIRED)
+find_package(webreal_visa 0.6 CONFIG REQUIRED)
 
 add_executable(mock_query mock_query.c)
 set_target_properties(mock_query PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED YES)

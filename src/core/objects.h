@@ -51,6 +51,7 @@ private:
     mutable std::mutex mutex_;
     std::unordered_set<ViObject> children_;
     std::map<ViUInt16, std::string> serial_paths_;
+    std::vector<std::string> gpib_resources_;
     std::vector<std::string> usb_resources_;
     std::map<std::pair<std::string, TcpipProtocol>, ViUInt16>
         tcpip_service_ports_;

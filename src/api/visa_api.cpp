@@ -13,6 +13,8 @@
 #include <vector>
 
 #include "backends/mock/mock_session.h"
+#include "backends/gpib/gpib_provider.h"
+#include "backends/gpib/gpib_session.h"
 #include "backends/hislip/hislip_session.h"
 #include "backends/serial/serial_session.h"
 #include "backends/tcp/tcp_session.h"
@@ -428,6 +430,17 @@ ViStatus WRVISA_CALL viOpen(ViSession sesn, ViConstRsrc name, ViAccessMode mode,
                 backend = wrvisa::SerialBackendSession::create(*path, open_status);
                 break;
             }
+            case wrvisa::ResourceKind::gpib_instr: {
+                auto transport = wrvisa::open_gpib_transport(
+                    parsed, timeout, open_status);
+                if (transport) {
+                    backend = std::make_unique<wrvisa::GpibBackendSession>(
+                        std::move(transport));
+                }
+                break;
+            }
+            case wrvisa::ResourceKind::gpib_intfc:
+                return VI_ERROR_NSUP_OPER;
             case wrvisa::ResourceKind::usb_instr: {
                 auto transport = wrvisa::open_usb_transport(parsed, timeout,
                                                             open_status);
@@ -521,7 +534,7 @@ ViStatus WRVISA_CALL viGetAttribute(ViObject vi, ViAttr attrName, void* attrValu
                     wrvisa::copy_output(static_cast<ViChar*>(attrValue), "RM");
                     return VI_SUCCESS;
                 case VI_ATTR_RSRC_IMPL_VERSION:
-                    *static_cast<ViVersion*>(attrValue) = UINT32_C(0x00000500);
+                    *static_cast<ViVersion*>(attrValue) = UINT32_C(0x00000600);
                     return VI_SUCCESS;
                 case VI_ATTR_RSRC_SPEC_VERSION:
                     *static_cast<ViVersion*>(attrValue) = VI_SPEC_VERSION;

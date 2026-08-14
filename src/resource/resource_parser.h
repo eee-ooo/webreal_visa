@@ -42,6 +42,9 @@ struct ResourceDescriptor {
     ViUInt16 usb_product_id{0};
     std::string usb_serial_number;
     ViUInt16 usb_interface_number{0};
+    ViUInt16 gpib_primary_address{0};
+    ViUInt16 gpib_secondary_address{0};
+    bool gpib_has_secondary_address{false};
 };
 
 std::optional<ResourceDescriptor> parse_resource(std::string_view value);

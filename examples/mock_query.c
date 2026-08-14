@@ -19,7 +19,7 @@ int main(void) {
     }
     response[count] = 0;
     printf("%s", (const char*)response);
-    if (strcmp((const char*)response, "WEBREAL,WRVISA-MOCK,0001,0.5\n") != 0) {
+    if (strcmp((const char*)response, "WEBREAL,WRVISA-MOCK,0001,0.6\n") != 0) {
         return 2;
     }
     return viClose(session) == VI_SUCCESS && viClose(manager) == VI_SUCCESS ? 0 : 3;

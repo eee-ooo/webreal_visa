@@ -11,7 +11,7 @@ _Static_assert(sizeof(ViSession) == 4, "ViSession ABI");
 _Static_assert(sizeof(ViAttrState) == sizeof(uintptr_t), "ViAttrState ABI");
 _Static_assert(VI_ATTR_ASRL_BAUD == UINT32_C(0x3FFF0021), "ASRL attribute ABI");
 _Static_assert(VI_ATTR_TCPIP_PORT == UINT32_C(0x3FFF0197), "TCPIP attribute ABI");
-_Static_assert(WRVISA_VERSION_MINOR == 5, "extension version");
+_Static_assert(WRVISA_VERSION_MINOR == 6, "extension version");
 _Static_assert(sizeof(wrvisa_usb_raw_config_v1) == 32,
                "USB RAW config ABI");
 _Static_assert(sizeof(wrvisa_usb_control_request_v1) == 32,

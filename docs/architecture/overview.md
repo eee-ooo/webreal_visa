@@ -12,7 +12,7 @@ API 外观 ── 参数校验、句柄解析、状态映射、后端选择
     ├── Resource parser + VPP regex/static-attribute matcher
     ├── Operation ── deadline / exactly-once completion / cancellation hook
     ├── Lock manager ── 进程内协调 + 协议远端锁挂钩
-    ├── Serial discovery / USB discovery snapshot / RM-scoped configuration
+    ├── Serial discovery / GPIB+USB discovery snapshots / RM-scoped configuration
     └── Backend session interface
           ├── Mock backend
           ├── Asio stream engine ── per-session strand / read & write queues
@@ -21,6 +21,9 @@ API 外观 ── 参数校验、句柄解析、状态映射、后端选择
           └── bounded request channel ── record/frame read + response draining
                 ├── ONC RPC/XDR ── VXI-11 core + abort channels
                 └── HiSLIP ── synchronous data + asynchronous control channels
+          ├── GPIB session
+          │     ├── GpibProvider registry ── discovery snapshot / open routing
+          │     └── GpibTransport ── EOI / clear / trigger / serial poll
           └── USB protocol sessions
                 ├── USBTMC/USB488 ── framing / split recovery / status / trigger
                 ├── USB RAW ── configured bulk/interrupt I/O + EP0 control
@@ -41,7 +44,7 @@ standalone Asio 只作为实现目标的私有头文件依赖，不进入安装�
 
 句柄由 32 位值编码：高 4 位对象类型、中 12 位代际、低 16 位槽位加一。槽位删除时代际递增；到达上限后槽位退役而不回绕。查表返回共享所有权，使并发调用可安全完成或被取消；关闭首先从表中移除句柄，再取消所有 operation，并立即关闭后端传输。
 
-资源管理器跟踪子句柄、ASRL 接口号到本机设备路径的映射、创建时取得的不可变 USB 发现快照、按规范资源名保存的 USB RAW 配置、按主机/协议限定的 TCPIP 服务端口覆盖，以及大小写无关的一对一资源 alias。自动发现规范化、去重并产生确定性排序；单个 USB provider 发现失败不会隐藏其他 provider 或 ASRL 资源。`wrvisaSetSerialPath` 可在打开会话前显式覆盖或补充映射，`wrvisaSetTcpipServicePort` 允许测试模拟器和自定义网关使用非特权服务端口，`wrvisaSetResourceAlias` 为当前 RM 配置非持久化名字，`wrvisaSetUsbRawConfig` 为后续 RAW 打开固定 alternate setting 和读写端点。`viOpen`、`viParseRsrc` 和 `viParseRsrcEx` 共享同一 alias 解析路径；已打开会话持有自己的配置快照，不受 RM 后续修改影响。关闭 RM 会使其子查找列表和会话失效并取消阻塞操作。
+资源管理器跟踪子句柄、ASRL 接口号到本机设备路径的映射、创建时取得的不可变 GPIB/USB 发现快照、按规范资源名保存的 USB RAW 配置、按主机/协议限定的 TCPIP 服务端口覆盖，以及大小写无关的一对一资源 alias。自动发现规范化、去重并产生确定性排序；单个 GPIB/USB provider 发现失败不会隐藏其他 provider 或 ASRL 资源。`wrvisaSetSerialPath` 可在打开会话前显式覆盖或补充映射，`wrvisaSetTcpipServicePort` 允许测试模拟器和自定义网关使用非特权服务端口，`wrvisaSetResourceAlias` 为当前 RM 配置非持久化名字，`wrvisaSetUsbRawConfig` 为后续 RAW 打开固定 alternate setting 和读写端点。`viOpen`、`viParseRsrc` 和 `viParseRsrcEx` 共享同一 alias 解析路径；已打开会话持有自己的配置快照，不受 RM 后续修改影响。关闭 RM 会使其子查找列表和会话失效并取消阻塞操作。
 
 `viFindRsrc` 先以 VPP 资源正则匹配 canonical name，再对规范化描述符求值可选 `{attrExpr}`。0.4 白名单只含接口类型/编号、资源类/名称和 ASRL 默认波特率；未知、局部或类型错误属性在表达式编译时失败，查找过程不做网络或串口 I/O。find-list 和 count 可省略；省略 find-list 时不注册临时句柄。
 
@@ -63,10 +66,12 @@ USB RAW 使用单独的 `UsbRawBackendSession`，不会将厂商请求加入标�
 
 第一个 libusb handle 启动专用事件线程，最后一个关闭后停止。bulk-OUT、bulk-IN、control 和 interrupt 各有方向适当的 gate，同类端点请求串行、不同端点可以推进；连接跟踪全部 active transfer，关闭或拔出可安全取消并等待各自 callback。transfer 使用 operation 剩余绝对预算，callback 固定最终状态并唤醒等待方。取消在 transfer 集合锁保护下调用 `libusb_cancel_transfer`，且必须等 callback 到达后才清除跟踪、释放 transfer 和缓冲。热插拔 callback 不调用描述符、打开或同步 I/O，只记录 device pointer 的 ARRIVED/LEFT 并标记弱连接；活动 transfer 由 libusb 完成为 NO_DEVICE，新操作直接返回连接丢失。脚本化 transport、仅测试 provider 和 libusb C API 模拟器分别验证协议、公共 API、RAW 和生产适配边界；真实 USB 硬件结果仍为 `NOT_TESTED`。
 
+0.6 的 GPIB 第一切片把 `GpibProvider`、`GpibTransport` 与 `GpibBackendSession` 分层。资源描述符保存 board、主地址、可选次地址和 `INSTR`/`INTFC` 身份；RM 保存创建时发现快照，显式打开使用当前 provider 注册表并延后返回最早可诊断错误。transport 显式报告 send-end、device clear、trigger 与 serial poll 能力，并以 `end` 表示 EOI；会话按半双工串行化事务，复用 operation deadline、取消、终止符、read-ahead 和失败不提交规则。`INTFC` 暂不开放控制器会话，且生产库尚无 linux-gpib、NI-488.2 或 Prologix provider；当前公共 `vi*` 闭环仅由测试目标中的 provider 证明，真实总线仍为 `NOT_TESTED`。
+
 ## 锁
 
 锁管理器按规范化资源名隔离，支持同进程排他锁、共享访问键和同类型嵌套计数；I/O 仅在操作开始时查询权限，不持有全局锁执行。第一次本地加锁成功后才请求远端锁，最后一次解锁再释放远端锁，远端失败会回滚本地状态。HiSLIP 可映射远端共享与排他锁；VXI-11 协议只有排他 `device_lock`，所以 VXI-11 的 VISA 共享锁仍只协调当前进程。跨进程同主机协调和混合类型嵌套的完整 VISA 行为仍未实现。
 
 ## 扩展点
 
-插件 ABI 单独位于 `webreal_visa_plugin.h`，使用尺寸与版本协商；`0.5` 仍不实现通用动态加载。新增协议必须实现 `BackendSession` 能力接口；可复用字节流语义的协议可使用流引擎，但消息协议不能被强行伪装成 raw stream。VXI-11、HiSLIP、USB 与 GPIB 保持独立后端边界；HiSLIP overlap、HiSLIP 2/TLS 和生产发现也不会由同步模式实现隐式开启。
+插件 ABI 单独位于 `webreal_visa_plugin.h`，使用尺寸与版本协商；`0.6` 仍不实现通用动态加载。新增协议必须实现 `BackendSession` 能力接口；可复用字节流语义的协议可使用流引擎，但消息协议不能被强行伪装成 raw stream。VXI-11、HiSLIP、USB 与 GPIB 保持独立后端边界；HiSLIP overlap、HiSLIP 2/TLS 和生产发现也不会由同步模式实现隐式开启。

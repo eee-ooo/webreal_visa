@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(webreal_visa VERSION 0.5.0 LANGUAGES C CXX)
+project(webreal_visa VERSION 0.6.0 LANGUAGES C CXX)
 
 include(CTest)
 include(GNUInstallDirs)
@@ -63,6 +63,8 @@ set(WRVISA_SOURCES
     src/runtime/io_runtime.cpp
     src/runtime/operation.cpp
     src/backends/asio/request_channel.cpp
+    src/backends/gpib/gpib_provider.cpp
+    src/backends/gpib/gpib_session.cpp
     src/backends/mock/mock_session.cpp
     src/backends/hislip/hislip_protocol.cpp
     src/backends/hislip/hislip_session.cpp
@@ -176,6 +178,7 @@ if(BUILD_TESTING)
     target_compile_definitions(tcp_tests PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
     target_include_directories(tcp_tests SYSTEM PRIVATE ${WRVISA_ASIO_INCLUDE_DIR})
     wrvisa_add_cpp_test(protocol_codec_tests tests/protocol_codec_tests.cpp)
+    wrvisa_add_cpp_test(gpib_tests tests/gpib_tests.cpp)
     wrvisa_add_cpp_test(usb_tests tests/usb_tests.cpp)
     wrvisa_add_cpp_test(usb_raw_tests tests/usb_raw_tests.cpp)
     wrvisa_add_cpp_test(usb_api_tests tests/usb_api_tests.cpp)

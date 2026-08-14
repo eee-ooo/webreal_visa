@@ -2,7 +2,18 @@
 
 更新时间：2026-08-13
 
-当前开发版本：`0.5.0`。用户于 2026-08-13 授权进入 USB 阶段；USB 资源/协议、provider/公共 API、class clear/abort 与 USB488、生产 libusb 适配，以及版本化 USB RAW 五个无硬件切片已完成，证据见 [`切片 1`](../progress/2026-08-13-stage-0.5-usb-slice-1.md)、[`切片 2`](../progress/2026-08-13-stage-0.5-usb-slice-2.md)、[`切片 3`](../progress/2026-08-13-stage-0.5-usb-slice-3.md)、[`切片 4`](../progress/2026-08-13-stage-0.5-usb-slice-4.md) 和 [`切片 5`](../progress/2026-08-13-stage-0.5-usb-slice-5.md)。0.5 的无硬件代码范围已收口；真实 USB 硬件验证仍无法进行，因此阶段保持进行中。0.4 的 Linux 无硬件兼容性加固是既有基线；既有 0.3 Windows 原生网络/协议结果继续有效，但 0.4/0.5 新增能力尚未在 Windows 原生重跑。USB 边界见 [`ADR-0009`](../decisions/0009-usb-transport-and-libusb-boundary.md)。
+当前开发版本：`0.6.0`。用户于 2026-08-13 授权进入 GPIB 阶段；资源身份、可替换 controller provider/transport 和测试专用控制器公共 API 闭环的第一纵向切片已完成，证据见 [`0.6 切片 1`](../progress/2026-08-13-stage-0.6-gpib-slice-1.md)，边界见 [`ADR-0010`](../decisions/0010-gpib-controller-provider-boundary.md)。0.5 五个无硬件 USB 切片是既有基线，真实 USB/GPIB 硬件均无法验证；0.4–0.6 新增能力也尚未在 Windows 原生重跑，因此这些范围保持 `NOT_TESTED`。
+
+## 0.6 进行中
+
+- `ResourceDescriptor` 现在保留 GPIB board、主地址、可选次地址和 `INSTR`/`INTFC` 身份；原有地址范围校验与规范化名称成为发现和打开的共同键。
+- `GpibProvider` 注册表负责发现快照与显式打开路由，隔离单个 provider 的发现失败，规范化/去重资源，并在多个 provider 均失败时保留最早可诊断状态。
+- `GpibTransport` 不暴露 linux-gpib、NI-488.2 或 Prologix 类型，明确承载 EOI/send-end、device clear、trigger、serial poll、取消、断开和关闭能力。
+- `GpibBackendSession` 按半双工串行化会话事务，并复用统一 operation deadline、终止符、EOI/read-ahead、失败缓冲回收和成功竞争后才提交用户输出的规则。
+- 测试目标内的 provider 经公共 `viFindRsrc`、`viOpen`、`viRead`、`viWrite`、`viReadSTB`、`viClear`、`viAssertTrigger`、`viFlush` 与 `viTerminate` 覆盖发现快照、地址路由、能力门禁、取消、超时和复用；模拟逻辑未进入生产库。
+- `GPIB[board]::INTFC` 可解析和发现，但专用控制器会话语义尚未确定，打开明确返回 `VI_ERROR_NSUP_OPER`。未注册 provider 时，合法 `INSTR` 同样明确不支持。
+- 0.6 未新增公共 C ABI；现有 21 个 `vi*` 与 5 个 `wrvisa*` 共 26 个导出及其 0.1–0.5 版本节点保持不变。
+- 当前没有生产 GPIB provider，也没有真实控制器或总线仪器；linux-gpib、NI-488.2、Prologix、Windows GPIB runtime 与真实硬件均未实现或为 `NOT_TESTED`，第一切片不能描述为本机 GPIB 已可直接使用。
 
 ## 0.5 进行中
 
@@ -35,11 +46,14 @@
 - VPP `{attrExpr}` 静态属性查找子集：逻辑组合、数值比较、字符串等值，并对未知/局部/类型错误属性明确返回 `VI_ERROR_INV_EXPR`。
 - RM 范围 `wrvisaSetResourceAlias`：进程内、非持久化、大小写无关；打开和两个 Parse 入口共享解析语义。Find/Parse 标准可选输出已补齐。
 - RM 范围 `wrvisaSetUsbRawConfig` 与 RAW 会话扩展：显式 bulk/interrupt 端点、标准同步读写、端点零 control、取消与共享 claim；Linux 无硬件模拟闭环已验证，真实设备未验证。
+- 测试/内部集成可注册 GPIB provider，经标准资源名和既有 `vi*` 使用读写、EOI、终止符、状态字、清除、触发与取消；当前没有面向最终用户的生产控制器 provider。
 - 0.1–0.5 ABI 历史清单固定 26 个公共符号所属版本节点，并与 ELF/PE 精确导出门禁分离，避免白名单与产物同时漂移。
 - 进程共享的固定 Asio 1.38.2 I/O runtime、每通道 strand、有界请求队列、绝对 deadline 和协议响应排空/清除恢复；无每会话线程。
 
 ## Linux 已验证
 
+- 0.6 第一切片在 GCC 13.3、libusb 启用时 Debug/Release 全量各 20/20，GCC ASan/UBSan/LSan（`detect_leaks=1`）20/20；显式关闭 libusb 的 Debug 为 19/19。`gpib_tests` 覆盖测试 provider 的公共 API 闭环、取消/超时和复用，并在 Release 连续 1000/1000 轮通过。
+- 0.6 Release 全新安装后，独立纯 C 静态/共享消费 2/2；ELF ABI 历史与精确导出门禁确认仍为 26 项。MinGW-w64 GCC 13 Release、`WRVISA_LIBUSB=OFF` 编译全部库和测试目标，文档/ABI/PE 导出 3/3，PE 仍为 26 项；交叉产物未运行，不能替代 Windows 原生证据。
 - 0.4 GCC 13.3 Debug/Release 全量各 14/14；GCC ASan/UBSan/LSan（`detect_leaks=1`）14/14。属性表达式正反例、alias 三入口一致性、可选输出和 ABI 历史均包含在内。
 - 0.4 Release 全新安装后静态/共享纯 C 消费 2/2；ELF 恰好导出 21 个 `vi*` 与三个 `wrvisa*`，共 24 项，0.1–0.4 版本节点历史一致。
 - 0.4 `resource_tests` 与 `api_tests` 各连续 100 轮通过；CI 同款资源/API/并发/raw TCP/codec/HiSLIP/VXI-11/ASRL 八个用例各连续 25 轮通过。
@@ -60,16 +74,16 @@
 
 ## 当前限制与发布阻塞
 
-- 0.4 新增 alias API、属性查找、可选输出、24 项 PE 导出和安装消费尚未在 Windows 原生重跑，状态为 `NOT_TESTED`；旧 0.3 Windows DLL 的 23 项结果不能替代本轮验证。
+- 0.4–0.6 新增 alias/API、属性查找、USB/GPIB、26 项 PE 导出和安装消费尚未在 Windows 原生重跑，状态为 `NOT_TESTED`；旧 0.3 Windows DLL 的 23 项结果不能替代本轮验证。
 - Windows 原生网络/协议无硬件门禁已完成；Windows ASRL runtime、真实串口电气行为和真实仪器互操作仍为 `NOT_TESTED`。任何交叉构建只能证明可编译，不能替代 runtime 结果。
 - VXI-11/HiSLIP 只与仓库内受控 loopback 模拟器互操作；第三方真实仪器、不同厂商错误行为和网络异常组合为 `NOT_TESTED`。
 - HiSLIP 当前只实现 1.x 同步模式；overlap、HiSLIP 2、TLS/加密和生产 DNS-SD/mDNS 发现未实现。初始化发送的 `WR` vendor ID 是临时项目值，尚未按 IVI VPP-9 注册，不能宣称正式互操作认证。
 - VXI-11 远端协议只有排他锁；VISA 共享锁仍只协调当前进程。跨进程锁、完整属性过滤、持久化系统 alias/完整资源类型和稳定版二进制兼容承诺未实现。
-- USB 0.5 的五个无硬件代码切片已经完成，但不得被描述为真实 USB 硬件验证；真实 USBTMC/USB488/RAW 的枚举、驱动 detach、权限、claim、端点和厂商初始化组合仍为 `NOT_TESTED`。本机 GPIB、厂商 VISA、动态插件加载和异步 job API 未实现；ASRL 的 mark/space parity、DTR/DSR 流控和完整 VISA 串口属性仍不完整。
+- USB 0.5 的五个无硬件代码切片已经完成，但不得被描述为真实 USB 硬件验证；真实 USBTMC/USB488/RAW 的枚举、驱动 detach、权限、claim、端点和厂商初始化组合仍为 `NOT_TESTED`。GPIB 0.6 目前也只有传输契约与测试 provider；生产控制器、`INTFC` 会话、厂商 VISA、动态插件加载和异步 job API 未实现。ASRL 的 mark/space parity、DTR/DSR 流控和完整 VISA 串口属性仍不完整。
 - macOS 构建/运行未验证。ThreadSanitizer 在当前容器因运行时内存映射不兼容而无法启动，不得记为通过。
 - 当前 Linux 环境没有 Clang、Valgrind、clang-tidy/cppcheck，且无 sudo 非交互安装权限；本轮相应矩阵未执行，不得记为通过。GCC Sanitizer 不能替代 ThreadSanitizer 或不同编译器验证。
 - 版权主体仍为 `[TBD_COPYRIGHT_HOLDER]`；正式项目 `LICENSE` 和对外发布被阻塞。Asio 与 libusb 第三方许可证及声明已随仓库保留。
 
 ## 下一步
 
-0.5 不再新增无硬件 USB 功能，下一步是验证收口：环境允许时在 Windows 原生重跑 0.4/0.5 新增 API、libusb 模拟适配器、MSVC ASan、安装消费和 26 项 PE 导出；硬件到位后再按独立矩阵记录 Linux/Windows 的驱动、权限、枚举、claim、USBTMC/USB488 与 RAW 实际结果。保持 GPIB、HiSLIP overlap/2.0/TLS 与通用动态插件加载在本轮范围之外。
+推荐进入 0.6 第二切片：评审 linux-gpib 用户库的 GPL 动态边界、board 配置、错误映射与取消能力，并在不依赖硬件的可注入 C API 模拟器上实现可选生产 provider；若许可或可取消性不能满足项目边界，则先停在 provider 契约，不伪造支持。Windows 原生复验与真实 USB/GPIB 硬件继续作为独立 `NOT_TESTED` 矩阵。

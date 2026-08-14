@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "core/lock_manager.h"
+#include "backends/gpib/gpib_provider.h"
 #include "backends/usb/usb_provider.h"
 #include "platform/serial_discovery.h"
 #include "webreal_visa_ext.h"
@@ -57,6 +58,7 @@ private:
 ResourceManager::ResourceManager()
     : Object(ObjectType::resource_manager),
       serial_paths_(discover_serial_ports()),
+      gpib_resources_(discover_gpib_resources()),
       usb_resources_(discover_usb_resources()) {}
 
 bool ResourceManager::add_child(ViObject child) {
@@ -200,11 +202,14 @@ std::vector<std::string> ResourceManager::discoverable_resources() const {
     if (closed_) {
         return resources;
     }
-    resources.reserve(serial_paths_.size() + usb_resources_.size());
+    resources.reserve(serial_paths_.size() + gpib_resources_.size() +
+                      usb_resources_.size());
     for (const auto& [number, path] : serial_paths_) {
         static_cast<void>(path);
         resources.push_back("ASRL" + std::to_string(number) + "::INSTR");
     }
+    resources.insert(resources.end(), gpib_resources_.begin(),
+                     gpib_resources_.end());
     resources.insert(resources.end(), usb_resources_.begin(), usb_resources_.end());
     std::sort(resources.begin(), resources.end());
     resources.erase(std::unique(resources.begin(), resources.end()),
@@ -525,7 +530,7 @@ ViStatus SessionObject::get_attribute(ViAttr attribute, void* value) const {
             copy_string(value, descriptor_.canonical_name);
             return VI_SUCCESS;
         case VI_ATTR_RSRC_IMPL_VERSION:
-            *static_cast<ViVersion*>(value) = UINT32_C(0x00000500);
+            *static_cast<ViVersion*>(value) = UINT32_C(0x00000600);
             return VI_SUCCESS;
         case VI_ATTR_RSRC_LOCK_STATE:
             *static_cast<ViAccessMode*>(value) =

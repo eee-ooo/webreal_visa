@@ -1,6 +1,6 @@
 # webreal_visa 项目需求（中文权威版）
 
-状态：阶段 0 基线，已完成 `0.4` 无硬件兼容性与工程化加固，并于 2026-08-13 获得用户授权进入 `0.5` USB 阶段。`0.5` 五个无硬件切片（含生产 libusb 适配器与 USB RAW）已完成；真实 USB 硬件、0.4/0.5 Windows 原生重跑、Windows ASRL/runtime、真实仪器互操作、远端 CI 首次运行与 macOS 仍保持 `NOT_TESTED`。本文件由父目录主提示词整理导入；进入仓库后，本文件是需求权威源。英文内容仅作辅助，冲突时以中文为准。
+状态：阶段 0 基线，`0.5` 五个无硬件 USB 切片（含生产 libusb 适配器与 USB RAW）已经完成并建立 Git 基线。用户于 2026-08-13 授权按推荐进入 `0.6` GPIB 阶段；资源身份、可替换控制器契约和纯模拟公共 API 闭环的第一切片已交付，尚未接厂商驱动。真实 USB/GPIB 硬件、0.4–0.6 Windows 原生重跑、Windows ASRL/runtime、真实仪器互操作、远端 CI 首次运行与 macOS 仍保持 `NOT_TESTED`。本文件由父目录主提示词整理导入；进入仓库后，本文件是需求权威源。英文内容仅作辅助，冲突时以中文为准。
 
 ## 1. 项目目标
 
@@ -8,7 +8,7 @@
 
 项目名与 CMake 命名空间为 `webreal_visa`。项目扩展使用 `wrvisa_` 函数前缀、`WRVISA_` 宏前缀；插件符号使用 `wrvisa_plugin_` 前缀，禁止占用 `vi*` 标准命名空间表达非标准能力。
 
-## 2. 当前授权范围：阶段 0 至 0.5 USB
+## 2. 当前授权范围：阶段 0 至 0.6 GPIB
 
 阶段 0 必须交付：
 
@@ -69,7 +69,14 @@
 - 无硬件门禁必须覆盖协议固定向量、畸形长度、bTag 错配、短包、终止符/read-ahead、取消、超时、拔出、接口共享和恢复复用；硬件不存在时准确标记 `NOT_TESTED`，不得把模拟器结果外推为硬件验证。
 - 五个纵向切片依次交付资源/传输/USBTMC 基础、provider/公共 API、class clear/abort 与 USB488 控制、可选 libusb 枚举/打开/异步传输，以及版本化 USB RAW bulk/interrupt/control 的无硬件验证。五个代码切片均已交付；真实硬件验证未完成前 `0.5` 保持进行中。
 
-本轮必须在 `0.5` USB 范围内工作。不得继续实现本机 GPIB、HiSLIP overlap、HiSLIP 2/TLS、通用动态插件加载、异步 job API、持久化系统配置或生产级网络发现。
+`0.6` 第一纵向切片必须交付：
+
+- 扩展传输无关资源描述符，分别保存 GPIB board、主地址、可选次地址和 `INSTR`/`INTFC` 身份；解析、规范化、发现和打开复用同一组字段。
+- 定义不依赖 linux-gpib、NI-488.2 或 Prologix 类型的 GPIB provider/transport 契约，明确 EOI、device clear、trigger、serial poll、取消、断开与关闭能力。
+- 只在测试目标注册模拟 provider，经公共 `viFindRsrc`、`viOpen`、`viRead`、`viWrite` 打通可取消、可超时的最小纵向闭环；模拟资源不得作为真实控制器或硬件通过证据。
+- 不新增公共 C ABI；26 个既有导出及其 0.1–0.5 所属节点保持不变。后续只有在标准资源字符串无法表达必要的控制器映射时，才评审版本化 `wrvisa*` 配置扩展。
+
+本轮必须保持在 `0.6` GPIB 范围内。第一切片不得接入或伪造 linux-gpib、NI-488.2、Prologix 真实控制器，不得并行扩展 HiSLIP overlap、HiSLIP 2/TLS、通用动态插件加载、异步 job API、持久化系统配置或生产级网络发现。
 
 ## 3. 标准与兼容基线
 
@@ -148,4 +155,4 @@ USB RAW 只能标记为事实扩展（`DE_FACTO_EXTENSION`），不得描述为 
 
 ## 9. 完成定义
 
-只有在实现、自动测试、兼容说明、文件地图和阶段报告一致时，才能标记相应平台范围完成。`0.4` 只有在 Linux Debug/Release、Sanitizer、属性表达式正反例、alias 三入口一致性、可选输出、ABI 历史、精确导出与安装消费通过后，才可标记“Linux 无硬件兼容性加固完成”。`0.5` 的无硬件切片必须同时证明依赖启用/禁用构建、USBTMC/USB488 与 RAW、异步 callback 取消、热拔出、压力、安装消费、许可材料和 ABI 不漂移；这些证据仍不能替代真实 USB 硬件。既有 Windows 0.3 网络/协议结果继续有效，但 0.4/0.5 新增 API 与门禁在 Windows 原生重新运行前必须写成 `NOT_TESTED`。Windows ASRL runtime、真实仪器互操作、远端 CI 与 macOS 在取得对应证据前仍不得推断通过。
+只有在实现、自动测试、兼容说明、文件地图和阶段报告一致时，才能标记相应平台范围完成。`0.4` 只有在 Linux Debug/Release、Sanitizer、属性表达式正反例、alias 三入口一致性、可选输出、ABI 历史、精确导出与安装消费通过后，才可标记“Linux 无硬件兼容性加固完成”。`0.5` 的无硬件切片必须同时证明依赖启用/禁用构建、USBTMC/USB488 与 RAW、异步 callback 取消、热拔出、压力、安装消费、许可材料和 ABI 不漂移；这些证据仍不能替代真实 USB 硬件。`0.6` 第一切片必须证明 GPIB 资源身份、provider 故障隔离与发现快照、EOI/send-end、能力门禁、取消/超时/复用、依赖启用/禁用、Sanitizer、压力、安装消费和 ABI 不漂移；模拟 provider 仍不能替代真实控制器。既有 Windows 0.3 网络/协议结果继续有效，但 0.4–0.6 新增能力与门禁在 Windows 原生重新运行前必须写成 `NOT_TESTED`。Windows ASRL runtime、真实仪器互操作、远端 CI 与 macOS 在取得对应证据前仍不得推断通过。

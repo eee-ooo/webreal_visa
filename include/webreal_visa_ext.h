@@ -4,9 +4,9 @@
 #include "visa.h"
 
 #define WRVISA_VERSION_MAJOR 0
-#define WRVISA_VERSION_MINOR 5
+#define WRVISA_VERSION_MINOR 6
 #define WRVISA_VERSION_PATCH 0
-#define WRVISA_VERSION_STRING "0.5.0"
+#define WRVISA_VERSION_STRING "0.6.0"
 
 /* PROJECT_EXTENSION: isolated test transport, never a physical VISA resource. */
 #define WRVISA_MOCK_RESOURCE "WRVISA0::MOCK::INSTR"

@@ -171,9 +171,15 @@ std::optional<ResourceDescriptor> parse_gpib(const std::vector<std::string_view>
         canonical += "::" + std::to_string(*secondary);
     }
     canonical += "::INSTR";
-    return ResourceDescriptor{ResourceKind::gpib_instr, VI_INTF_GPIB, *board,
-                              "INSTR", std::move(canonical), {}, 0, {},
-                              TcpipProtocol::none, 0, 0, {}, 0};
+    ResourceDescriptor descriptor{
+        ResourceKind::gpib_instr, VI_INTF_GPIB, *board, "INSTR",
+        std::move(canonical), {}, 0, {}, TcpipProtocol::none, 0, 0, {}, 0};
+    descriptor.gpib_primary_address = *primary;
+    if (secondary) {
+        descriptor.gpib_secondary_address = *secondary;
+        descriptor.gpib_has_secondary_address = true;
+    }
+    return descriptor;
 }
 
 std::optional<ResourceDescriptor> parse_tcpip(const std::vector<std::string_view>& parts) {
