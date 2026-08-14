@@ -83,10 +83,10 @@ private:
     std::atomic<ViUInt16> cached_status_{0};
     std::atomic<bool> remote_locked_{false};
     std::atomic<bool> clear_requested_{false};
-    std::atomic<bool> clear_acknowledged_{false};
-    std::atomic<bool> clear_request_finished_{false};
     std::mutex clear_mutex_;
     std::condition_variable clear_condition_;
+    bool clear_acknowledged_{false};
+    bool clear_request_finished_{false};
     std::atomic<bool> closed_{false};
 };
 

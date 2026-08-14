@@ -202,19 +202,28 @@ void HiSlipBackendSession::request_async_clear() noexcept {
         clear_requested_.exchange(true, std::memory_order_acq_rel)) {
         return;
     }
+    bool acknowledged = false;
     try {
-        clear_request_finished_.store(false, std::memory_order_release);
+        {
+            std::lock_guard lock(clear_mutex_);
+            clear_acknowledged_ = false;
+            clear_request_finished_ = false;
+        }
         Operation operation(500);
         hislip::Frame response;
         auto request = hislip::encode(hislip::MessageType::async_device_clear, 0, 0);
         const auto status = exchange_expected(
             *asynchronous_, operation, std::move(request),
             hislip::MessageType::async_device_clear_acknowledge, response);
-        clear_acknowledged_.store(status >= VI_SUCCESS, std::memory_order_release);
+        acknowledged = status >= VI_SUCCESS;
     } catch (...) {
-        clear_acknowledged_.store(false, std::memory_order_release);
+        acknowledged = false;
     }
-    clear_request_finished_.store(true, std::memory_order_release);
+    {
+        std::lock_guard lock(clear_mutex_);
+        clear_acknowledged_ = acknowledged;
+        clear_request_finished_ = true;
+    }
     clear_condition_.notify_all();
 }
 
@@ -222,22 +231,25 @@ void HiSlipBackendSession::reset_after_clear() noexcept {
     next_message_id_ = UINT32_C(0xFFFFFF00);
     last_sent_message_id_ = UINT32_C(0xFFFFFEFE);
     clear_requested_.store(false, std::memory_order_release);
-    clear_acknowledged_.store(false, std::memory_order_release);
-    clear_request_finished_.store(false, std::memory_order_release);
+    {
+        std::lock_guard clear_lock(clear_mutex_);
+        clear_acknowledged_ = false;
+        clear_request_finished_ = false;
+    }
     std::lock_guard ahead_lock(read_ahead_mutex_);
     read_ahead_.clear();
     read_ahead_end_ = false;
 }
 
 ViStatus HiSlipBackendSession::complete_cancel_recovery() noexcept {
-    if (!clear_request_finished_.load(std::memory_order_acquire)) {
+    {
         std::unique_lock lock(clear_mutex_);
-        clear_condition_.wait_for(lock, std::chrono::milliseconds(500), [this] {
-            return clear_request_finished_.load(std::memory_order_acquire);
-        });
-    }
-    if (!clear_acknowledged_.load(std::memory_order_acquire)) {
-        return VI_ERROR_CONN_LOST;
+        const auto finished = clear_condition_.wait_for(
+            lock, std::chrono::milliseconds(500),
+            [this] { return clear_request_finished_; });
+        if (!finished || !clear_acknowledged_) {
+            return VI_ERROR_CONN_LOST;
+        }
     }
     try {
         Operation operation(500);

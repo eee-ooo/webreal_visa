@@ -395,7 +395,12 @@ int main() {
     CHECK(simulator.wait_for_timeout_request());
     CHECK(viSetAttribute(session, VI_ATTR_TMO_VALUE, 30) == VI_SUCCESS);
     count = 99;
-    CHECK(viRead(session, buffer.data(), buffer.size(), &count) == VI_ERROR_TMO);
+    const auto timeout_status =
+        viRead(session, buffer.data(), buffer.size(), &count);
+    if (timeout_status != VI_ERROR_TMO) {
+        std::cerr << "HiSLIP timeout read status=" << timeout_status << '\n';
+    }
+    CHECK(timeout_status == VI_ERROR_TMO);
     CHECK(count == 0);
     CHECK(viSetAttribute(session, VI_ATTR_TMO_VALUE, 1000) == VI_SUCCESS);
     CHECK(write_text(session, "AFTER\n") == VI_SUCCESS);
