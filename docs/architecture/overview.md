@@ -66,7 +66,7 @@ USB RAW 使用单独的 `UsbRawBackendSession`，不会将厂商请求加入标�
 
 第一个 libusb handle 启动专用事件线程，最后一个关闭后停止。bulk-OUT、bulk-IN、control 和 interrupt 各有方向适当的 gate，同类端点请求串行、不同端点可以推进；连接跟踪全部 active transfer，关闭或拔出可安全取消并等待各自 callback。transfer 使用 operation 剩余绝对预算，callback 固定最终状态并唤醒等待方。取消在 transfer 集合锁保护下调用 `libusb_cancel_transfer`，且必须等 callback 到达后才清除跟踪、释放 transfer 和缓冲。热插拔 callback 不调用描述符、打开或同步 I/O，只记录 device pointer 的 ARRIVED/LEFT 并标记弱连接；活动 transfer 由 libusb 完成为 NO_DEVICE，新操作直接返回连接丢失。脚本化 transport、仅测试 provider 和 libusb C API 模拟器分别验证协议、公共 API、RAW 和生产适配边界；真实 USB 硬件结果仍为 `NOT_TESTED`。
 
-0.6 的 GPIB 第一切片把 `GpibProvider`、`GpibTransport` 与 `GpibBackendSession` 分层。资源描述符保存 board、主地址、可选次地址和 `INSTR`/`INTFC` 身份；RM 保存创建时发现快照，显式打开使用当前 provider 注册表并延后返回最早可诊断错误。transport 显式报告 send-end、device clear、trigger 与 serial poll 能力，并以 `end` 表示 EOI；会话按半双工串行化事务，复用 operation deadline、取消、终止符、read-ahead 和失败不提交规则。`INTFC` 暂不开放控制器会话，且生产库尚无 linux-gpib、NI-488.2 或 Prologix provider；当前公共 `vi*` 闭环仅由测试目标中的 provider 证明，真实总线仍为 `NOT_TESTED`。
+0.6 的 GPIB 第一切片把 `GpibProvider`、`GpibTransport` 与 `GpibBackendSession` 分层。资源描述符保存 board、主地址、可选次地址和 `INSTR`/`INTFC` 身份；RM 保存创建时发现快照，显式打开使用当前 provider 注册表并延后返回最早可诊断错误。transport 显式报告 send-end、device clear、trigger 与 serial poll 能力，并以 `end` 表示 EOI；会话按半双工串行化事务，复用 operation deadline、取消、终止符、read-ahead 和失败不提交规则。`INTFC` 暂不开放控制器会话。第二切片按 ADR-0011 拒绝把 GPL linux-gpib 直接链接、延迟链接或 `dlopen` 进核心库；生产库仍无 linux-gpib、NI-488.2 或 Prologix provider。当前公共 `vi*` 闭环仅由测试目标中的 provider 证明，真实总线仍为 `NOT_TESTED`。
 
 ## 锁
 

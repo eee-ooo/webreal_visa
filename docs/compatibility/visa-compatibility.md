@@ -28,7 +28,7 @@
 | TCPIP 服务端口覆盖 | PROJECT_EXTENSION | `wrvisaSetTcpipServicePort` 按 RM/主机/协议覆盖 VXI-11 portmapper 或 HiSLIP 端口，用于测试与自定义网关 |
 | USBTMC `INSTR` | Partial (production libusb adapter + simulator, Linux) | 可选 libusb 1.0.30 动态适配器已实现枚举/匹配、共享 claim、异步 bulk/control/interrupt、安全取消与热拔出；资源、DEV_DEP、class clear/abort、USB488 状态/触发及公共 `vi*` 闭环由受控 libusb API 模拟器验证。真实设备、驱动/权限组合与 Windows runtime 仍为 `NOT_TESTED` |
 | USB `RAW` | DE_FACTO_EXTENSION (production libusb adapter + simulator, Linux) | 与 `INSTR` 分开解析/发现；`wrvisaSetUsbRawConfig` 以版本化结构在 RM 上固定 alternate setting 和 bulk/interrupt/none 读写端点，标准 `viRead`/`viWrite` 执行 I/O，`wrvisaUsbControlTransfer` 执行 16 位长度上限的端点零 IN/OUT。未配置返回 `VI_ERROR_INTF_NUM_NCONFIG`；真实设备与 Windows runtime `NOT_TESTED` |
-| 本机 GPIB | Partial (Linux simulator) | 已实现 board/主地址/可选次地址身份、provider/transport、EOI/send-end、可选 clear/trigger/serial poll、取消/超时和公共 `vi*` 闭环；`INTFC` 会话及 linux-gpib、NI-488.2、Prologix、真实控制器/仪器均未实现或 `NOT_TESTED` |
+| 本机 GPIB | Partial (Linux simulator) | 已实现 board/主地址/可选次地址身份、provider/transport、EOI/send-end、可选 clear/trigger/serial poll、取消/超时和公共 `vi*` 闭环；linux-gpib 4.3.7 因 GPL 边界按 ADR-0011 拒绝进程内链接或 `dlopen`，`INTFC` 会话、NI-488.2、Prologix、真实控制器/仪器仍未实现或 `NOT_TESTED` |
 | 厂商 VISA | Not implemented | 未加载或转发 NI、Keysight 等厂商 VISA；GPIB 形式的 VXI-11 LAN device name 不等于本机 GPIB 后端 |
 | Windows 0.3 原生运行 | Partial | MSVC Debug/Release/ASan、raw TCP、VXI-11/HiSLIP loopback、安装消费和 PE 导出已验证；0.4–0.6 新增能力尚未原生重跑，Windows ASRL/runtime、GPIB 和真实仪器 `NOT_TESTED` |
 | 二进制兼容承诺 | Partial | 尚未作稳定版 ABI 承诺；ELF 0.1–0.5 节点分层，机器清单禁止既有符号删除/迁移，ELF/PE 继续做精确导出检查 |

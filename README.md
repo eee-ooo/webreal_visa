@@ -1,6 +1,6 @@
 # webreal_visa
 
-`webreal_visa` 是一个面向 Windows 与 Ubuntu 的 VISA 兼容实现。项目以 C ABI 作为长期兼容边界，以 C++20 实现内部核心；当前开发版本为 `0.6.0`。0.4 已支持隔离的模拟后端、raw TCP Socket、ASRL 串口、VXI-11、HiSLIP 1.x 同步模式、VPP 静态属性查找、RM 范围资源 alias 和 ABI 历史门禁。0.5 的五个无硬件 USB 切片已完成 USB `INSTR`/`RAW` 资源模型、USBTMC/USB488、可替换传输/provider、可选 libusb 1.0.30 生产适配器、RAW bulk/interrupt/control、异步取消、热拔出映射与共享接口仲裁。0.6 的第一纵向切片已加入 GPIB 地址身份、可替换 provider/transport 和测试专用控制器公共 `vi*` 闭环；尚未接入 linux-gpib、NI-488.2 或 Prologix。真实 USB/GPIB 硬件均为 `NOT_TESTED`，HiSLIP overlap/2.0/TLS 和厂商 VISA 也尚未实现。
+`webreal_visa` 是一个面向 Windows 与 Ubuntu 的 VISA 兼容实现。项目以 C ABI 作为长期兼容边界，以 C++20 实现内部核心；当前开发版本为 `0.6.0`。0.4 已支持隔离的模拟后端、raw TCP Socket、ASRL 串口、VXI-11、HiSLIP 1.x 同步模式、VPP 静态属性查找、RM 范围资源 alias 和 ABI 历史门禁。0.5 的五个无硬件 USB 切片已完成 USB `INSTR`/`RAW` 资源模型、USBTMC/USB488、可替换传输/provider、可选 libusb 1.0.30 生产适配器、RAW bulk/interrupt/control、异步取消、热拔出映射与共享接口仲裁。0.6 的第一纵向切片已加入 GPIB 地址身份、可替换 provider/transport 和测试专用控制器公共 `vi*` 闭环；第二切片完成 linux-gpib 4.3.7 许可/API 评审，并因其 GPL 边界拒绝在 MIT 核心库中链接或 `dlopen`。NI-488.2 与 Prologix 仍未接入。真实 USB/GPIB 硬件均为 `NOT_TESTED`，HiSLIP overlap/2.0/TLS 和厂商 VISA 也尚未实现。
 
 当前状态、已验证能力与准确限制见 [`docs/status/current.md`](docs/status/current.md)，历史网络协议证据见 [`0.3 Linux 记录`](docs/progress/2026-08-11-stage-0.3-linux.md) 与 [`0.3 Windows 记录`](docs/progress/2026-08-12-stage-0.3-windows.md)，`0.4` 见 [`无硬件加固记录`](docs/progress/2026-08-12-stage-0.4-linux.md)。没有历史上下文的 AI 或开发者应先阅读 [`AGENTS.md`](AGENTS.md)。
 
@@ -35,7 +35,7 @@ USB RAW 使用 [`webreal_visa_ext.h`](include/webreal_visa_ext.h) 中的版本�
 
 ## English summary
 
-`webreal_visa` 0.6 is under development. Its first GPIB slice adds canonical board/primary/secondary addressing, replaceable provider/transport contracts, EOI-aware I/O, optional clear/trigger/serial-poll capabilities, and a public-API loop through a test-only controller. No linux-gpib, NI-488.2, or Prologix production provider is included yet, and real GPIB hardware remains `NOT_TESTED`. The 0.5 USB baseline remains covered through controlled transport and libusb API simulators; real USB hardware is also `NOT_TESTED`.
+`webreal_visa` 0.6 is under development. Its first GPIB slice adds canonical board/primary/secondary addressing, replaceable provider/transport contracts, EOI-aware I/O, optional clear/trigger/serial-poll capabilities, and a public-API loop through a test-only controller. The second slice reviewed linux-gpib 4.3.7 and rejected in-process linking or `dlopen` because its GPL boundary conflicts with this project's current MIT dependency policy. No NI-488.2 or Prologix production provider is included yet, and real GPIB hardware remains `NOT_TESTED`. The 0.5 USB baseline remains covered through controlled transport and libusb API simulators; real USB hardware is also `NOT_TESTED`.
 
 The project is not affiliated with, certified by, or endorsed by the IVI Foundation, NI, Keysight, or any other VISA vendor.
 

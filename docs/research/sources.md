@@ -40,6 +40,14 @@ libusb 官方异步 API 明确要求取消后等待 completion callback，未完
 
 Asio 版本和构建决策见 [`ADR-0006`](../decisions/0006-asio-real-transport-runtime.md)，许可分发边界见 [`licensing.md`](../project/licensing.md)。
 
+## 0.6 linux-gpib 许可与 API 评审
+
+| 项目 | 固定版本与来源 | 许可证 | 当前关系 |
+|---|---|---|---|
+| linux-gpib | 官方 SourceForge 4.3.7；外层归档 SHA-256 `b3ff812606865c85b58b012a4218a6fe3b82d177c8c0abc795cb22db41f3ad68`，用户态归档 SHA-256 `9fadb8a063d7a83c753e428d87ad9677d8fb18ed5a61cb557898ae9b8a987f71` | 用户态 `COPYING` 为 GPL v2；公开头/实现标记 GPL-2.0 或 GPL v2-or-later，无链接例外 | 只评审 `ibdev`、异步 I/O、`ibwait`/`ibstop`、线程局部状态、timeout、clear/trigger/serial poll 和关闭语义；按 ADR-0011 拒绝链接、`dlopen`、复制或分发，不进入生产库 |
+
+官方 4.3.7 的异步 API 以每个 descriptor 的内部 pthread 执行 `ibrda`/`ibwrta`，`ibwait(CMPL)` 或 `ibstop` 负责 join 并同步 `AsyncIbsta`/`AsyncIberr`/`AsyncIbcntl`。`ibstop` 成功中止以 `ERR`/`EABO` 表示；`ibtmo` 只有离散档位，实际超时不会早于所选档位。这些语义与现有 Transport 可以建立技术映射，但许可闸门先于实现，因而没有创建 C API 函数表、模拟器或 Provider。完整记录见 [`0.6 linux-gpib 评审`](../progress/2026-08-14-stage-0.6-linux-gpib-review.md)。
+
 ## 开源实现参考边界
 
 `0.1`–`0.4` 没有复制或修改下列参考项目代码，也不链接其库。VXI-11/HiSLIP 的协议层依据上节公开规范独立编写；0.4 属性表达式解析器同样为依据 VPP-4.3 编写的第一方代码。没有引入 `libtirpc`、`liblxi` 或 `libhislip`。2026-08-11 的既有源码复核详情见 [`implementation-review.md`](implementation-review.md)。采用的 Asio 与 libusb 依赖已在上节单独声明，不归入“仅参考”列表。
@@ -51,7 +59,7 @@ Asio 版本和构建决策见 [`ADR-0006`](../decisions/0006-asio-real-transport
 | OpenVisa | `lilongww/OpenVisa`，`0a7bdac9c490819440416268c876a37c1b4896c8`，`src/OpenVisa/Private/IOBase.h`、`src/OpenVisa/Object.cpp`、`LICENSE` | LGPL-3.0-or-later | 只作架构对照；禁止复制进目标 MIT 源码，未链接 |
 | liblxi | `lxi-tools/liblxi` | BSD-3-Clause（须按提交复核） | 协议实现线索，未纳入 |
 | libhislip | `lxi-tools/libhislip` | BSD-3-Clause（须按提交复核） | 协议实现线索，未纳入 |
-| linux-gpib | `coolshou/linux-gpib` 等分发源 | GPL 系列 | 仅协议/工具研究，不进入库 |
+| linux-gpib | SourceForge 官方 4.3.7 稳定发布与官方 Git | GPL v2 / GPL v2-or-later | 许可/API 闸门已完成；拒绝进程内链接、动态加载和复制，不进入库 |
 
 ## 证据 URL
 
@@ -78,5 +86,9 @@ Asio 版本和构建决策见 [`ADR-0006`](../decisions/0006-asio-real-transport
 - https://libusb.sourceforge.io/api-1.0/group__libusb__hotplug.html
 - https://www.usb.org/documents
 - https://usb.org/sites/default/files/USBTMC_1_006a.zip
+- https://linux-gpib.sourceforge.io/
+- https://linux-gpib.sourceforge.io/doc_html/reference.html
+- https://sourceforge.net/projects/linux-gpib/files/linux-gpib%20for%203.x.x%20and%202.6.x%20kernels/4.3.7/
+- https://sourceforge.net/p/linux-gpib/git/ci/master/tree/
 
 CI 使用 `actions/checkout` 的固定提交 `de0fac2e4500dabe0009e67214ff5f5447ce83dd`（v6.0.2，MIT）；它只在 GitHub 托管构建环境执行，不进入库或发行物。
