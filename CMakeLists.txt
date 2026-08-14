@@ -53,6 +53,18 @@ if(NOT EXISTS "${WRVISA_ASIO_INCLUDE_DIR}/asio.hpp")
     message(FATAL_ERROR "WRVISA_ASIO_SOURCE_DIR does not contain asio/include/asio.hpp")
 endif()
 
+function(wrvisa_target_include_asio target)
+    if(MSVC)
+        # CMake maps SYSTEM includes to /external:I for MSVC. Resolution of a
+        # fetched header through that switch has varied between hosted MSVC/CMake
+        # combinations, so keep this private dependency on the regular /I path.
+        target_include_directories(${target} PRIVATE ${WRVISA_ASIO_INCLUDE_DIR})
+    else()
+        target_include_directories(${target} SYSTEM PRIVATE
+            ${WRVISA_ASIO_INCLUDE_DIR})
+    endif()
+endfunction()
+
 set(WRVISA_SOURCES
     src/api/visa_api.cpp
     src/core/handle_table.cpp
@@ -92,8 +104,7 @@ target_include_directories(webreal_visa_objects
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_include_directories(webreal_visa_objects SYSTEM PRIVATE
-    ${WRVISA_ASIO_INCLUDE_DIR})
+wrvisa_target_include_asio(webreal_visa_objects)
 if(WRVISA_HAS_LIBUSB)
     target_link_libraries(webreal_visa_objects PRIVATE LibUSB::LibUSB)
 endif()
@@ -177,12 +188,12 @@ if(BUILD_TESTING)
     wrvisa_add_cpp_test(concurrency_tests tests/concurrency_tests.cpp)
     wrvisa_add_cpp_test(tcp_tests tests/tcp_tests.cpp)
     target_compile_definitions(tcp_tests PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
-    target_include_directories(tcp_tests SYSTEM PRIVATE ${WRVISA_ASIO_INCLUDE_DIR})
+    wrvisa_target_include_asio(tcp_tests)
     wrvisa_add_cpp_test(protocol_codec_tests tests/protocol_codec_tests.cpp)
     wrvisa_add_cpp_test(gpib_tests tests/gpib_tests.cpp)
     wrvisa_add_cpp_test(prologix_tests tests/prologix_tests.cpp)
     target_compile_definitions(prologix_tests PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
-    target_include_directories(prologix_tests SYSTEM PRIVATE ${WRVISA_ASIO_INCLUDE_DIR})
+    wrvisa_target_include_asio(prologix_tests)
 
     wrvisa_add_cpp_test(usb_tests tests/usb_tests.cpp)
     wrvisa_add_cpp_test(usb_raw_tests tests/usb_raw_tests.cpp)
@@ -194,10 +205,10 @@ if(BUILD_TESTING)
     endif()
     wrvisa_add_cpp_test(hislip_tests tests/hislip_tests.cpp)
     target_compile_definitions(hislip_tests PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
-    target_include_directories(hislip_tests SYSTEM PRIVATE ${WRVISA_ASIO_INCLUDE_DIR})
+    wrvisa_target_include_asio(hislip_tests)
     wrvisa_add_cpp_test(vxi11_tests tests/vxi11_tests.cpp)
     target_compile_definitions(vxi11_tests PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
-    target_include_directories(vxi11_tests SYSTEM PRIVATE ${WRVISA_ASIO_INCLUDE_DIR})
+    wrvisa_target_include_asio(vxi11_tests)
     if(UNIX)
         wrvisa_add_cpp_test(prologix_serial_tests tests/prologix_serial_tests.cpp)
         wrvisa_add_cpp_test(serial_tests tests/serial_tests.cpp)

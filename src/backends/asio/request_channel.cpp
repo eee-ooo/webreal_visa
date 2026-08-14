@@ -57,10 +57,13 @@ struct RequestChannel::State final : std::enable_shared_from_this<State> {
     struct Request final {
         Request(asio::any_io_executor executor, Operation& value,
                 std::vector<std::uint8_t> bytes, ResponseFraming response_framing)
-            : operation(value), request(std::move(bytes)), framing(response_framing),
+            : operation(&value), request(std::move(bytes)), framing(response_framing),
               timer(executor) {}
 
-        Operation& operation;
+        // The caller owns Operation and may destroy it as soon as completion is
+        // published. All handlers run on State::strand; finish() detaches this
+        // pointer before fulfilling the promise so late handlers cannot use it.
+        Operation* operation;
         std::vector<std::uint8_t> request;
         ResponseFraming framing;
         asio::steady_timer timer;
@@ -98,8 +101,8 @@ struct RequestChannel::State final : std::enable_shared_from_this<State> {
             finish(request, VI_ERROR_CONN_LOST);
             return;
         }
-        if (request->operation.completed()) {
-            finish(request, request->operation.result());
+        if (request->operation->completed()) {
+            finish(request, request->operation->result());
             return;
         }
         request->enqueued = true;
@@ -110,15 +113,15 @@ struct RequestChannel::State final : std::enable_shared_from_this<State> {
     }
 
     void arm_timer(const std::shared_ptr<Request>& request) {
-        const auto deadline = request->operation.deadline();
+        const auto deadline = request->operation->deadline();
         if (deadline == Operation::Clock::time_point::max()) {
             return;
         }
         request->timer.expires_at(deadline);
         request->timer.async_wait(asio::bind_executor(
             strand, [request](const asio::error_code& error) {
-                if (!error && !request->done) {
-                    static_cast<void>(request->operation.request_timeout());
+                if (!error && !request->done && request->operation != nullptr) {
+                    static_cast<void>(request->operation->request_timeout());
                 }
             }));
     }
@@ -130,9 +133,9 @@ struct RequestChannel::State final : std::enable_shared_from_this<State> {
                 queue.pop_front();
                 continue;
             }
-            if (request->operation.completed()) {
+            if (request->operation->completed()) {
                 queue.pop_front();
-                finish(request, request->operation.result());
+                finish(request, request->operation->result());
                 continue;
             }
             request->active = true;
@@ -160,8 +163,11 @@ struct RequestChannel::State final : std::enable_shared_from_this<State> {
     }
 
     void begin_response(const std::shared_ptr<Request>& request) {
-        if (request->operation.completed()) {
-            finish(request, request->operation.result());
+        if (request->done || request->operation == nullptr) {
+            return;
+        }
+        if (request->operation->completed()) {
+            finish(request, request->operation->result());
             return;
         }
         switch (request->framing) {
@@ -296,9 +302,12 @@ struct RequestChannel::State final : std::enable_shared_from_this<State> {
 
     void finish_error(const std::shared_ptr<Request>& request,
                       const asio::error_code& error) {
+        if (request->done || request->operation == nullptr) {
+            return;
+        }
         if (error == asio::error::operation_aborted &&
-            request->operation.completed()) {
-            finish(request, request->operation.result());
+            request->operation->completed()) {
+            finish(request, request->operation->result());
             return;
         }
         finish(request, map_socket_error(error));
@@ -309,10 +318,11 @@ struct RequestChannel::State final : std::enable_shared_from_this<State> {
             return;
         }
         ViStatus status = proposed;
-        if (request->operation.completed()) {
-            status = request->operation.result();
-        } else if (status < VI_SUCCESS && !request->operation.try_complete(status)) {
-            status = request->operation.result();
+        if (request->operation->completed()) {
+            status = request->operation->result();
+        } else if (status < VI_SUCCESS &&
+                   !request->operation->try_complete(status)) {
+            status = request->operation->result();
         }
         request->done = true;
         request->active = false;
@@ -327,6 +337,7 @@ struct RequestChannel::State final : std::enable_shared_from_this<State> {
         }
         auto response = status >= VI_SUCCESS ? std::move(request->response)
                                              : std::vector<std::uint8_t>{};
+        request->operation = nullptr;
         request->completion.set_value(ExchangeResult{status, std::move(response)});
         if (!closed) {
             start_next();
@@ -360,7 +371,7 @@ struct RequestChannel::State final : std::enable_shared_from_this<State> {
             request->cancellation.emit(asio::cancellation_type::terminal);
             return;
         }
-        finish(request, request->operation.result());
+        finish(request, request->operation->result());
     }
 
     void close() {
@@ -374,8 +385,8 @@ struct RequestChannel::State final : std::enable_shared_from_this<State> {
         socket.close(ignored);
         const auto pending = queue;
         for (const auto& request : pending) {
-            finish(request, request->operation.completed()
-                                ? request->operation.result()
+            finish(request, request->operation->completed()
+                                ? request->operation->result()
                                 : VI_ERROR_CONN_LOST);
         }
     }
