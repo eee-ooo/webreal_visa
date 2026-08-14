@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdio>
 #include <deque>
 #include <future>
 #include <limits>
@@ -350,6 +351,12 @@ struct RequestChannel::State final : std::enable_shared_from_this<State> {
         }
         if (request->active) {
             if (drain_on_cancel) {
+                std::fprintf(stderr,
+                             "RequestChannel trace: drain cancel request=%p "
+                             "operation=%p result=%d\n",
+                             static_cast<const void*>(request.get()),
+                             static_cast<const void*>(request->operation),
+                             static_cast<int>(request->operation->result()));
                 request->timer.cancel();
                 if (cancel_observer) {
                     try {

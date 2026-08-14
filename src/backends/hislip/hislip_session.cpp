@@ -211,7 +211,11 @@ ViStatus HiSlipBackendSession::open(ViUInt32 timeout) {
     }
     maximum_outgoing_payload_ = static_cast<std::size_t>(
         std::min<std::uint64_t>(peer_maximum, kMaximumPayload));
-    synchronous_->set_cancel_observer([this] { request_async_clear(); });
+    synchronous_->set_cancel_observer([this] {
+        std::fprintf(stderr,
+                     "HiSLIP trace: RequestChannel requested async clear\n");
+        request_async_clear();
+    });
     return VI_SUCCESS;
 }
 
@@ -399,9 +403,12 @@ ViStatus HiSlipBackendSession::read(Operation& operation, ViPBuf buffer,
         if (frame.type == hislip::MessageType::interrupted) {
             std::fprintf(stderr,
                          "HiSLIP trace: read received Interrupted as success "
-                         "(operation completed=%d result=%d)\n",
+                         "(operation=%p completed=%d result=%d "
+                         "clear_requested=%d)\n",
+                         static_cast<const void*>(&operation),
                          operation.completed() ? 1 : 0,
-                         static_cast<int>(operation.result()));
+                         static_cast<int>(operation.result()),
+                         clear_requested_.load(std::memory_order_acquire) ? 1 : 0);
             close();
             return VI_ERROR_IO;
         }
@@ -623,6 +630,7 @@ ViStatus HiSlipBackendSession::get_attribute(ViAttr attribute, void* value) {
 }
 
 void HiSlipBackendSession::notify_cancel() noexcept {
+    std::fprintf(stderr, "HiSLIP trace: session notify requested async clear\n");
     request_async_clear();
 }
 
