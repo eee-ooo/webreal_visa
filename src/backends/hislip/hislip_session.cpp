@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <span>
@@ -89,24 +88,13 @@ ViStatus HiSlipBackendSession::exchange(RequestChannel& channel,
                                         Operation& operation,
                                         std::vector<std::uint8_t> request,
                                         hislip::Frame& response) {
-    const auto* channel_name = &channel == synchronous_.get() ? "sync" : "async";
     std::vector<std::uint8_t> bytes;
     const auto status = channel.exchange(operation, std::move(request),
                                          ResponseFraming::hislip_frame, bytes);
     if (status < VI_SUCCESS) {
-        if (status == VI_ERROR_IO) {
-            std::fprintf(stderr,
-                         "HiSLIP trace: %s RequestChannel returned VI_ERROR_IO "
-                         "(operation completed=%d result=%d)\n",
-                         channel_name, operation.completed() ? 1 : 0,
-                         static_cast<int>(operation.result()));
-        }
         return status;
     }
     if (!hislip::decode(bytes, response)) {
-        std::fprintf(stderr,
-                     "HiSLIP trace: %s response decode failed (%zu bytes)\n",
-                     channel_name, bytes.size());
         close();
         return VI_ERROR_IO;
     }
@@ -115,8 +103,6 @@ ViStatus HiSlipBackendSession::exchange(RequestChannel& channel,
         return VI_ERROR_CONN_LOST;
     }
     if (response.type == hislip::MessageType::error) {
-        std::fprintf(stderr, "HiSLIP trace: %s received Error frame\n",
-                     channel_name);
         return VI_ERROR_IO;
     }
     return VI_SUCCESS;
@@ -145,10 +131,6 @@ ViStatus HiSlipBackendSession::exchange_expected(
             response.type == hislip::MessageType::async_interrupted) {
             continue;
         }
-        std::fprintf(stderr,
-                     "HiSLIP trace: exchange_expected got type=%u, expected=%u\n",
-                     static_cast<unsigned>(response.type),
-                     static_cast<unsigned>(expected));
         return VI_ERROR_IO;
     }
 }
@@ -211,11 +193,7 @@ ViStatus HiSlipBackendSession::open(ViUInt32 timeout) {
     }
     maximum_outgoing_payload_ = static_cast<std::size_t>(
         std::min<std::uint64_t>(peer_maximum, kMaximumPayload));
-    synchronous_->set_cancel_observer([this] {
-        std::fprintf(stderr,
-                     "HiSLIP trace: RequestChannel requested async clear\n");
-        request_async_clear();
-    });
+    synchronous_->set_cancel_observer([this] { request_async_clear(); });
     return VI_SUCCESS;
 }
 
@@ -401,22 +379,11 @@ ViStatus HiSlipBackendSession::read(Operation& operation, ViPBuf buffer,
             return status;
         }
         if (frame.type == hislip::MessageType::interrupted) {
-            std::fprintf(stderr,
-                         "HiSLIP trace: read received Interrupted as success "
-                         "(operation=%p completed=%d result=%d "
-                         "clear_requested=%d)\n",
-                         static_cast<const void*>(&operation),
-                         operation.completed() ? 1 : 0,
-                         static_cast<int>(operation.result()),
-                         clear_requested_.load(std::memory_order_acquire) ? 1 : 0);
             close();
             return VI_ERROR_IO;
         }
         if (frame.type != hislip::MessageType::data &&
             frame.type != hislip::MessageType::data_end) {
-            std::fprintf(stderr,
-                         "HiSLIP trace: read received unexpected type=%u\n",
-                         static_cast<unsigned>(frame.type));
             close();
             return VI_ERROR_IO;
         }
@@ -425,10 +392,6 @@ ViStatus HiSlipBackendSession::read(Operation& operation, ViPBuf buffer,
             std::lock_guard ahead_lock(read_ahead_mutex_);
             read_ahead_.clear();
             read_ahead_end_ = false;
-            std::fprintf(stderr,
-                         "HiSLIP trace: read message id=%u, expected=%u\n",
-                         static_cast<unsigned>(frame.parameter),
-                         static_cast<unsigned>(last_sent_message_id_));
             close();
             return VI_ERROR_IO;
         }
@@ -630,8 +593,9 @@ ViStatus HiSlipBackendSession::get_attribute(ViAttr attribute, void* value) {
 }
 
 void HiSlipBackendSession::notify_cancel() noexcept {
-    std::fprintf(stderr, "HiSLIP trace: session notify requested async clear\n");
-    request_async_clear();
+    // Each active RequestChannel operation installs its own cancellation
+    // handler. Sending another session-wide clear here can race after that
+    // request has already recovered and interrupt the next operation.
 }
 
 void HiSlipBackendSession::close() noexcept {

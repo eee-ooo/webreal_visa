@@ -203,7 +203,7 @@ ViStatus Vxi11BackendSession::open(ViUInt32 timeout) {
     if (status < VI_SUCCESS) {
         return status;
     }
-    core_->set_cancel_observer([this] { notify_cancel(); });
+    core_->set_cancel_observer([this] { request_abort(); });
     return VI_SUCCESS;
 }
 
@@ -527,7 +527,7 @@ ViStatus Vxi11BackendSession::get_attribute(ViAttr attribute, void* value) {
     }
 }
 
-void Vxi11BackendSession::notify_cancel() noexcept {
+void Vxi11BackendSession::request_abort() noexcept {
     if (!abort_ || link_id_ == 0 || closed_.load(std::memory_order_acquire)) {
         return;
     }
@@ -543,6 +543,11 @@ void Vxi11BackendSession::notify_cancel() noexcept {
                                vxi11::kDeviceAbort, arguments.bytes(), result));
     } catch (...) {
     }
+}
+
+void Vxi11BackendSession::notify_cancel() noexcept {
+    // The active core-channel request owns abort recovery. A second
+    // session-wide abort can arrive after recovery and corrupt the next RPC.
 }
 
 void Vxi11BackendSession::close() noexcept {

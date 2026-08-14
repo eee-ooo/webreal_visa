@@ -56,6 +56,7 @@ private:
                   const std::vector<std::uint8_t>& arguments,
                   std::vector<std::uint8_t>& result);
     ViStatus generic_call(Operation& operation, std::uint32_t procedure);
+    void request_abort() noexcept;
     bool acquire_io(Operation& operation, std::unique_lock<std::timed_mutex>& lock);
     std::uint32_t next_xid() noexcept;
 
