@@ -1,6 +1,6 @@
 # webreal_visa 项目需求（中文权威版）
 
-状态：阶段 0 基线，`0.5` 五个无硬件 USB 切片（含生产 libusb 适配器与 USB RAW）已经完成并建立 Git 基线。用户于 2026-08-13 授权按推荐进入 `0.6` GPIB 阶段；资源身份、可替换控制器契约和纯模拟公共 API 闭环的第一切片已交付。2026-08-14 完成第二切片的 linux-gpib 4.3.7 许可/API 闸门；其 GPL 边界不满足当前 MIT 依赖政策，因此不实现进程内 Provider。真实 USB/GPIB 硬件、0.4–0.6 Windows 原生重跑、Windows ASRL/runtime、真实仪器互操作、远端 CI 首次运行与 macOS 仍保持 `NOT_TESTED`。本文件由父目录主提示词整理导入；进入仓库后，本文件是需求权威源。英文内容仅作辅助，冲突时以中文为准。
+状态：阶段 0 基线，`0.5` 五个无硬件 USB 切片（含生产 libusb 适配器与 USB RAW）已经完成并建立 Git 基线。用户于 2026-08-13 授权按推荐进入 `0.6` GPIB 阶段；第一切片交付资源/控制器契约和模拟公共 API 闭环，第二切片因 GPL 边界拒绝 linux-gpib 进程内 Provider。2026-08-14 的第三切片依据 Prologix 官方串口/TCP 命令协议实现显式配置的生产 Provider，并以 Linux TCP loopback 与 POSIX PTY 验证无硬件路径；真实 Prologix/GPIB 仪器、Windows 0.4–0.6 原生重跑、真实 USB、远端 CI 首次运行与 macOS 仍保持 `NOT_TESTED`。本文件由父目录主提示词整理导入；进入仓库后，本文件是需求权威源。英文内容仅作辅助，冲突时以中文为准。
 
 ## 1. 项目目标
 
@@ -84,7 +84,16 @@
 - 当前评审确认 linux-gpib 4.3.7 用户态库、公开头和实现均在 GPL 边界且没有链接例外，因此直接链接、延迟链接和 `dlopen` 均不采用；本切片不增加生产代码、公共 ABI 或构建依赖。
 - 未来只有取得兼容链接例外、替代许可或商业授权，或另行批准具有独立许可/分发边界的进程外方案，才可通过新 ADR 重开实现。
 
-本轮必须保持在 `0.6` GPIB 范围内。第二切片不得把 GPL linux-gpib 通过动态加载伪装成无依赖实现，也不得顺带接入 NI-488.2、Prologix、HiSLIP overlap、HiSLIP 2/TLS、通用动态插件加载、异步 job API、持久化系统配置或生产级网络发现。
+`0.6` 第三纵向切片（Prologix）必须交付：
+
+- 只依据官方 GPIB-USB 6.0 与 GPIB-Ethernet 手册实现命令协议，不链接、复制或动态加载 linux-gpib；固定来源 URL、下载校验值和采用关系。
+- 以版本化 RM 范围 `wrvisaSetPrologixController` 显式映射 GPIB board 到串口路径或 TCP host/port；不得从 ASRL 编号、环境变量或扫描结果猜测控制器。
+- 对同一原样 endpoint 身份共享一个进程内 controller，在完整地址选择、状态切换、写入或响应排空事务外仲裁；冲突配置返回资源忙，endpoint 别名不作物理去重并必须在部署中统一。
+- 连接或恢复时先发送 `++savecfg 0`，固定 controller/auto/EOS/EOT/read timeout 状态并验证 `++ver`；写数据转义 CR/LF/ESC/`+`，读取在释放事务前排空到 EOT 并受最大响应大小限制。
+- 超时、取消、协议越界和连接错误使通道失效；下一事务必须重连并完整初始化。不得在未知控制器状态上继续，也不得虚构 GPIB 发现资源或实现未定义的 `INTFC` 会话。
+- 公共契约必须明确单字节 EOT 与仪器数据无法无歧义共存，不能宣称任意二进制透明；Linux TCP loopback 和 POSIX PTY 覆盖共享仲裁、队列 deadline、取消恢复与串口打开，真实控制器/仪器和 Windows runtime 保持 `NOT_TESTED`。
+
+本轮必须保持在 `0.6` GPIB 范围内。不得把 GPL linux-gpib 通过动态加载伪装成无依赖实现，也不得顺带接入 NI-488.2、HiSLIP overlap、HiSLIP 2/TLS、通用动态插件加载、异步 job API、持久化系统配置或生产级网络发现。
 
 ## 3. 标准与兼容基线
 
@@ -163,4 +172,4 @@ USB RAW 只能标记为事实扩展（`DE_FACTO_EXTENSION`），不得描述为 
 
 ## 9. 完成定义
 
-只有在实现、自动测试、兼容说明、文件地图和阶段报告一致时，才能标记相应平台范围完成。`0.4` 只有在 Linux Debug/Release、Sanitizer、属性表达式正反例、alias 三入口一致性、可选输出、ABI 历史、精确导出与安装消费通过后，才可标记“Linux 无硬件兼容性加固完成”。`0.5` 的无硬件切片必须同时证明依赖启用/禁用构建、USBTMC/USB488 与 RAW、异步 callback 取消、热拔出、压力、安装消费、许可材料和 ABI 不漂移；这些证据仍不能替代真实 USB 硬件。`0.6` 第一切片必须证明 GPIB 资源身份、provider 故障隔离与发现快照、EOI/send-end、能力门禁、取消/超时/复用、依赖启用/禁用、Sanitizer、压力、安装消费和 ABI 不漂移；模拟 provider 仍不能替代真实控制器。既有 Windows 0.3 网络/协议结果继续有效，但 0.4–0.6 新增能力与门禁在 Windows 原生重新运行前必须写成 `NOT_TESTED`。Windows ASRL runtime、真实仪器互操作、远端 CI 与 macOS 在取得对应证据前仍不得推断通过。
+只有在实现、自动测试、兼容说明、文件地图和阶段报告一致时，才能标记相应平台范围完成。`0.4` 只有在 Linux Debug/Release、Sanitizer、属性表达式正反例、alias 三入口一致性、可选输出、ABI 历史、精确导出与安装消费通过后，才可标记“Linux 无硬件兼容性加固完成”。`0.5` 的无硬件切片必须同时证明依赖启用/禁用构建、USBTMC/USB488 与 RAW、异步 callback 取消、热拔出、压力、安装消费、许可材料和 ABI 不漂移；这些证据仍不能替代真实 USB 硬件。`0.6` 第一切片必须证明通用 GPIB 契约，第三切片还必须证明 Prologix 配置 ABI、端点级仲裁、EEPROM 保护、命令转义、完整响应排空、大小上限、排队 deadline、取消/错误后的重连初始化，以及 TCP/PTY 无硬件路径；这些证据仍不能替代真实 Prologix 控制器或总线仪器。既有 Windows 0.3 网络/协议结果继续有效，但 0.4–0.6 新增能力与门禁在 Windows 原生重新运行前必须写成 `NOT_TESTED`。Windows ASRL/runtime、真实仪器互操作、远端 CI 与 macOS 在取得对应证据前仍不得推断通过。

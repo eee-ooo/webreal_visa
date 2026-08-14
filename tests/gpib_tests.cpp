@@ -115,6 +115,11 @@ public:
         return VI_SUCCESS;
     }
 
+    void discard_read_buffer() noexcept override {
+        std::lock_guard lock(state_->mutex);
+        response_.clear();
+    }
+
     ViStatus trigger(wrvisa::Operation& operation) override {
         if (operation.completed()) {
             return operation.result();

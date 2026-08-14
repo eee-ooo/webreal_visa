@@ -1,8 +1,8 @@
 #include "visa.h"
 
 #include <algorithm>
-#include <cstring>
 #include <cctype>
+#include <cstring>
 #include <exception>
 #include <iterator>
 #include <memory>
@@ -12,10 +12,11 @@
 #include <utility>
 #include <vector>
 
-#include "backends/mock/mock_session.h"
 #include "backends/gpib/gpib_provider.h"
 #include "backends/gpib/gpib_session.h"
+#include "backends/gpib/prologix_provider.h"
 #include "backends/hislip/hislip_session.h"
+#include "backends/mock/mock_session.h"
 #include "backends/serial/serial_session.h"
 #include "backends/tcp/tcp_session.h"
 #include "backends/usb/usb_provider.h"
@@ -209,6 +210,29 @@ bool valid_usb_endpoint(UsbTransferType type, std::uint8_t endpoint,
 }
 
 bool zero_usb_raw_reserved(const wrvisa_usb_raw_config_v1& config) {
+    return std::all_of(std::begin(config.reserved8),
+                       std::end(config.reserved8),
+                       [](ViUInt8 value) { return value == 0; }) &&
+           config.flags == 0 &&
+           std::all_of(std::begin(config.reserved),
+                       std::end(config.reserved),
+                       [](ViUInt32 value) { return value == 0; });
+}
+
+ViStatus validate_prologix_structure(
+    const wrvisa_prologix_controller_config_v1& config) {
+    if (config.struct_size < sizeof(config)) {
+        return VI_ERROR_INV_SIZE;
+    }
+    if (config.abi_major != WRVISA_PROLOGIX_ABI_MAJOR ||
+        config.abi_minor > WRVISA_PROLOGIX_ABI_MINOR) {
+        return VI_ERROR_NSUP_OPER;
+    }
+    return VI_SUCCESS;
+}
+
+bool zero_prologix_reserved(
+    const wrvisa_prologix_controller_config_v1& config) {
     return std::all_of(std::begin(config.reserved8),
                        std::end(config.reserved8),
                        [](ViUInt8 value) { return value == 0; }) &&
@@ -431,8 +455,18 @@ ViStatus WRVISA_CALL viOpen(ViSession sesn, ViConstRsrc name, ViAccessMode mode,
                 break;
             }
             case wrvisa::ResourceKind::gpib_instr: {
-                auto transport = wrvisa::open_gpib_transport(
-                    parsed, timeout, open_status);
+                std::unique_ptr<wrvisa::GpibTransport> transport;
+                if (const auto provider =
+                        manager->gpib_provider(parsed.interface_number)) {
+                    open_status = VI_ERROR_RSRC_NFOUND;
+                    transport = provider->open(parsed, timeout, open_status);
+                    if (!transport && open_status >= VI_SUCCESS) {
+                        open_status = VI_ERROR_SYSTEM_ERROR;
+                    }
+                } else {
+                    transport = wrvisa::open_gpib_transport(
+                        parsed, timeout, open_status);
+                }
                 if (transport) {
                     backend = std::make_unique<wrvisa::GpibBackendSession>(
                         std::move(transport));
@@ -782,6 +816,61 @@ ViStatus WRVISA_CALL wrvisaSetUsbRawConfig(
             *write_type, config->write_endpoint};
         return manager->set_usb_raw_configuration(
                    resolved->descriptor.canonical_name, configuration)
+                   ? VI_SUCCESS
+                   : VI_ERROR_INV_OBJECT;
+    });
+}
+
+ViStatus WRVISA_CALL wrvisaSetPrologixController(
+    ViSession rmSesn, ViUInt16 board, ViConstString endpoint,
+    const wrvisa_prologix_controller_config_v1* config) {
+    return wrvisa::api_guard([&] {
+        if (endpoint == nullptr || endpoint[0] == '\0' || config == nullptr) {
+            return VI_ERROR_INV_PARAMETER;
+        }
+        const auto structure_status =
+            wrvisa::validate_prologix_structure(*config);
+        if (structure_status < VI_SUCCESS) {
+            return structure_status;
+        }
+        if (!wrvisa::zero_prologix_reserved(*config)) {
+            return VI_ERROR_INV_PARAMETER;
+        }
+        std::optional<wrvisa::PrologixConnectionKind> connection;
+        if (config->connection_type == WRVISA_PROLOGIX_CONNECTION_SERIAL) {
+            if (config->tcp_port != 0) {
+                return VI_ERROR_INV_PARAMETER;
+            }
+            connection = wrvisa::PrologixConnectionKind::serial;
+        } else if (config->connection_type ==
+                   WRVISA_PROLOGIX_CONNECTION_TCP) {
+            if (config->tcp_port == 0) {
+                return VI_ERROR_INV_PARAMETER;
+            }
+            connection = wrvisa::PrologixConnectionKind::tcp;
+        } else {
+            return VI_ERROR_INV_PARAMETER;
+        }
+        if (config->read_timeout_ms < 1 || config->read_timeout_ms > 3000 ||
+            config->maximum_response_size < 1 ||
+            config->maximum_response_size > WRVISA_PROLOGIX_MAX_RESPONSE_SIZE) {
+            return VI_ERROR_INV_PARAMETER;
+        }
+        auto manager = wrvisa::get_handle<wrvisa::ResourceManager>(
+            rmSesn, wrvisa::ObjectType::resource_manager);
+        if (!manager) {
+            return VI_ERROR_INV_OBJECT;
+        }
+        wrvisa::PrologixConfiguration configuration{
+            *connection, endpoint, config->tcp_port, config->eot_char,
+            config->read_timeout_ms, config->maximum_response_size};
+        ViStatus status = VI_ERROR_SYSTEM_ERROR;
+        auto provider = wrvisa::make_prologix_provider(
+            board, std::move(configuration), status);
+        if (!provider) {
+            return status;
+        }
+        return manager->set_gpib_provider(board, std::move(provider))
                    ? VI_SUCCESS
                    : VI_ERROR_INV_OBJECT;
     });

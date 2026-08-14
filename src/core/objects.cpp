@@ -102,6 +102,27 @@ std::optional<std::string> ResourceManager::serial_path(
     return found->second;
 }
 
+bool ResourceManager::set_gpib_provider(
+    ViUInt16 board, std::shared_ptr<GpibProvider> provider) {
+    if (!provider) {
+        return false;
+    }
+    std::lock_guard lock(mutex_);
+    if (closed_) {
+        return false;
+    }
+    gpib_providers_[board] = std::move(provider);
+    return true;
+}
+
+std::shared_ptr<GpibProvider> ResourceManager::gpib_provider(
+    ViUInt16 board) const {
+    std::lock_guard lock(mutex_);
+    const auto found = gpib_providers_.find(board);
+    return closed_ || found == gpib_providers_.end() ? nullptr
+                                                      : found->second;
+}
+
 bool ResourceManager::set_tcpip_service_port(std::string host,
                                              TcpipProtocol protocol,
                                              ViUInt16 port) {

@@ -44,6 +44,9 @@ public:
         static_cast<void>(status_byte);
         return VI_ERROR_NSUP_OPER;
     }
+    // Discard only bytes already prefetched into the transport. This must not
+    // perform device I/O and is called while the session I/O mutex is held.
+    virtual void discard_read_buffer() noexcept = 0;
     virtual void cancel() noexcept = 0;
     virtual void close() noexcept = 0;
 };

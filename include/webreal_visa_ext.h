@@ -24,6 +24,15 @@
 #define WRVISA_USB_TRANSFER_BULK 1
 #define WRVISA_USB_TRANSFER_INTERRUPT 2
 
+/* PROJECT_EXTENSION: explicit Prologix serial/TCP controller configuration. */
+#define WRVISA_PROLOGIX_ABI_MAJOR 1
+#define WRVISA_PROLOGIX_ABI_MINOR 0
+
+#define WRVISA_PROLOGIX_CONNECTION_SERIAL 1
+#define WRVISA_PROLOGIX_CONNECTION_TCP 2
+
+#define WRVISA_PROLOGIX_MAX_RESPONSE_SIZE UINT32_C(67108864)
+
 typedef struct wrvisa_usb_raw_config_v1 {
     ViUInt32 struct_size;
     ViUInt16 abi_major;
@@ -51,6 +60,20 @@ typedef struct wrvisa_usb_control_request_v1 {
     ViUInt32 reserved[3];
 } wrvisa_usb_control_request_v1;
 
+typedef struct wrvisa_prologix_controller_config_v1 {
+    ViUInt32 struct_size;
+    ViUInt16 abi_major;
+    ViUInt16 abi_minor;
+    ViUInt16 connection_type;
+    ViUInt16 tcp_port;
+    ViUInt8 eot_char;
+    ViUInt8 reserved8[3];
+    ViUInt32 read_timeout_ms;
+    ViUInt32 maximum_response_size;
+    ViUInt32 flags;
+    ViUInt32 reserved[3];
+} wrvisa_prologix_controller_config_v1;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -77,6 +100,11 @@ WRVISA_API ViStatus WRVISA_CALL wrvisaSetUsbRawConfig(
 WRVISA_API ViStatus WRVISA_CALL wrvisaUsbControlTransfer(
     ViSession vi, const wrvisa_usb_control_request_v1* request,
     ViBuf data, ViUInt32 count, ViPUInt32 retCnt);
+
+/* PROJECT_EXTENSION: map one GPIB board to an explicit Prologix endpoint. */
+WRVISA_API ViStatus WRVISA_CALL wrvisaSetPrologixController(
+    ViSession rmSesn, ViUInt16 board, ViConstString endpoint,
+    const wrvisa_prologix_controller_config_v1* config);
 
 #ifdef __cplusplus
 }

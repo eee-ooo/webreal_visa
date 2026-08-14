@@ -36,6 +36,9 @@
     "WRVISA_0.5": [
       "wrvisaSetUsbRawConfig",
       "wrvisaUsbControlTransfer"
+    ],
+    "WRVISA_0.6": [
+      "wrvisaSetPrologixController"
     ]
   }
 }

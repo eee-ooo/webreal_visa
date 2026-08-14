@@ -6,10 +6,10 @@
 
 | 文件 | 职责 |
 |---|---|
-| `CMakeLists.txt` | 定义 C/C++20 工程、固定或本地 Asio 来源、可选 libusb 1.0.30 动态依赖、对象层、共享/静态库、安装规则和全部 CTest 门禁。 |
+| `CMakeLists.txt` | 定义 C/C++20 工程、固定或本地 Asio 来源、可选 libusb 1.0.30 动态依赖、Prologix 生产源、对象层、共享/静态库、安装规则和全部 CTest 门禁。 |
 | `cmake/FindLibUSB.cmake` | 查找 libusb 头和动态库，从 `LIBUSB_API_VERSION` 校验最低 1.0.30，并提供 `LibUSB::LibUSB` 导入目标。 |
-| `cmake/webreal_visa.map` | ELF 共享库的 0.1–0.5 版本化导出白名单，防止 STL/内部 C++ 符号泄漏为非预期 ABI。 |
-| `cmake/webreal_visa_abi.json` | 冻结 26 个 0.1–0.5 公共符号首次所属版本节点，并记录当前 0.6 工程版本，作为独立于链接脚本的 ABI 历史基线。 |
+| `cmake/webreal_visa.map` | ELF 共享库的 0.1–0.6 版本化导出白名单，防止 STL/内部 C++ 符号泄漏为非预期 ABI。 |
+| `cmake/webreal_visa_abi.json` | 冻结 27 个 0.1–0.6 公共符号首次所属版本节点，作为独立于链接脚本的 ABI 历史基线。 |
 | `cmake/webreal_visaConfig.cmake.in` | 安装后 CMake 包入口，恢复线程与启用构建所需的 libusb 动态依赖，并导入命名空间目标。 |
 | `cmake/uninstall.cmake.in` | 依据 CMake 安装清单生成显式 `uninstall` 目标。 |
 | `.github/workflows/build.yml` | 定义 Ubuntu 24.04 与 Windows 2025 的 Debug/Release、Release 轻量重复压力、安装后静态/共享消费，以及 GCC/MSVC Sanitizer 持续门禁；Linux 从校验归档构建动态 libusb 1.0.30 并强制覆盖生产适配器。 |
@@ -27,14 +27,14 @@
 | 文件 | 职责 |
 |---|---|
 | `include/visa.h` | VISA 兼容基础类型、标准数值、导出/调用约定和首批公共函数；是长期 ABI 边界。 |
-| `include/webreal_visa_ext.h` | 0.6 项目版本、模拟资源、ASRL 路径、TCPIP 服务端口、资源 alias，以及带尺寸/版本/保留字段的 USB RAW 配置和端点零 control 扩展；使用 `wrvisa*`，不污染 `vi*` 命名空间。 |
+| `include/webreal_visa_ext.h` | 0.6 项目版本、模拟资源、ASRL 路径、TCPIP 服务端口、资源 alias，以及带尺寸/版本/保留字段的 USB RAW/control 与 Prologix controller 配置扩展；使用 `wrvisa*`，不污染 `vi*` 命名空间。 |
 | `include/webreal_visa_plugin.h` | 尺寸协商、版本化的插件/宿主 C ABI 契约；0.1 不包含加载器。 |
 
 ## API 外观
 
 | 文件 | 职责 |
 |---|---|
-| `src/api/visa_api.cpp` | 实现全部首批 `vi*` 与项目扩展入口、可选输出、alias/RAW 配置解析、版本化 USB control 校验、ABI 异常屏障、句柄/状态映射，并确定性选择模拟、TCP Socket、ASRL、VXI-11、HiSLIP 或已注册 GPIB/USB provider。 |
+| `src/api/visa_api.cpp` | 实现全部首批 `vi*` 与项目扩展入口、可选输出、alias/RAW/Prologix 配置解析、版本化 USB control 校验、ABI 异常屏障、句柄/状态映射，并确定性选择模拟、TCP Socket、ASRL、VXI-11、HiSLIP 或 RM/注册表 GPIB/USB provider。 |
 
 ## 核心对象与访问控制
 
@@ -43,8 +43,8 @@
 | `src/core/backend_session.h` | 后端会话的 I/O、清除、状态、触发、USB control 和远端锁能力接口及默认不支持行为，使 API/核心不依赖具体传输实现。 |
 | `src/core/handle_table.h` | 声明对象类型、对象基类和类型化代际句柄表。 |
 | `src/core/handle_table.cpp` | 句柄编码、短锁查表、删除、代际递增和耗尽退役实现。 |
-| `src/core/objects.h` | 声明 RM、FindList、Session 的所有权、GPIB/USB 发现快照、RM 范围 alias/传输覆盖/USB RAW 配置、属性、远端锁挂钩和 operation 注册接口。 |
-| `src/core/objects.cpp` | 实现 GPIB/USB 发现快照、大小写无关 alias 解析、RAW 配置快照、父子级联关闭、后端立即关闭、I/O/控制委派、取消等待、协议远端锁协调和资源清理。 |
+| `src/core/objects.h` | 声明 RM、FindList、Session 的所有权、GPIB/USB 发现快照、RM 范围 GPIB provider/alias/传输覆盖/USB RAW 配置、属性、远端锁挂钩和 operation 注册接口。 |
+| `src/core/objects.cpp` | 实现 GPIB/USB 发现快照、RM board provider 映射、大小写无关 alias 解析、RAW 配置快照、父子级联关闭、后端立即关闭、I/O/控制委派、取消等待、协议远端锁协调和资源清理。 |
 | `src/core/lock_manager.h` | 声明按规范化资源隔离的进程内锁协调器及会话锁深度查询。 |
 | `src/core/lock_manager.cpp` | 实现排他/共享锁、访问键、嵌套计数、超时、会话释放和远端锁边界所需深度判断。 |
 
@@ -70,9 +70,11 @@
 | `src/backends/asio/request_channel.cpp` | 实现共享 runtime 上的 TCP 连接、strand 请求队列、绝对 deadline、协议边界读取与取消后响应排空。 |
 | `src/backends/gpib/gpib_provider.h` | 声明 GPIB provider、RAII 注册令牌、发现和按规范资源身份打开 transport 的内部契约。 |
 | `src/backends/gpib/gpib_provider.cpp` | 实现线程安全 provider 快照、发现故障隔离、规范化去重、当前 provider 打开路由和最早可诊断错误保留；当前不注册生产 provider。 |
-| `src/backends/gpib/gpib_transport.h` | 定义不暴露 linux-gpib、NI-488.2 或 Prologix 类型的 GPIB 读写/EOI/send-end、clear、trigger、serial poll、取消和关闭契约。 |
+| `src/backends/gpib/prologix_provider.h` | 声明 Prologix 串口/TCP 配置值与创建 RM board provider 的内部入口，不把第三方类型暴露给通用 GPIB 层。 |
+| `src/backends/gpib/prologix_provider.cpp` | 实现 Asio 串口/TCP 连接、Prologix 初始化/版本校验、数据转义、有界 EOT 排空、clear/trigger/spoll、端点身份共享、完整事务仲裁，以及超时/取消/协议错误后的失效重连。 |
+| `src/backends/gpib/gpib_transport.h` | 定义不暴露 linux-gpib、NI-488.2 或 Prologix 类型的 GPIB 读写/EOI/send-end、clear、trigger、serial poll、传输预取缓存丢弃、取消和关闭契约。 |
 | `src/backends/gpib/gpib_session.h` | 声明按半双工串行化的 GPIB 后端会话、能力快照、read-ahead 和 EOI 状态。 |
-| `src/backends/gpib/gpib_session.cpp` | 实现 GPIB 读写、终止符/EOI/read-ahead、send-end、clear、flush、状态字、触发、超时/取消与失败不提交语义。 |
+| `src/backends/gpib/gpib_session.cpp` | 实现 GPIB 读写、终止符/EOI/read-ahead、send-end、clear、会话与 transport 两层预取缓存的 flush、状态字、触发、超时/取消与失败不提交语义。 |
 | `src/backends/hislip/hislip_protocol.h` | 声明 HiSLIP 1.x 消息类型、16 字节头、帧对象与有界编解码接口。 |
 | `src/backends/hislip/hislip_protocol.cpp` | 实现网络字节序 HiSLIP 帧编码、头校验和协商长度上限检查。 |
 | `src/backends/hislip/hislip_session.h` | 声明 HiSLIP 同步/异步双通道会话、协商状态、消息 ID、read-ahead 和控制能力。 |
@@ -86,7 +88,7 @@
 | `src/backends/vxi11/vxi11_session.h` | 声明 VXI-11 core/abort 双通道会话、link、事务 ID、分块和 read-ahead 状态。 |
 | `src/backends/vxi11/vxi11_session.cpp` | 实现 portmapper、create/destroy link、分块读写、状态字、清除、触发、远端排他锁、abort 与响应排空。 |
 | `src/backends/serial/serial_session.h` | 声明 ASRL 后端、串口配置状态和平台清除能力。 |
-| `src/backends/serial/serial_session.cpp` | 实现本机串口打开、9600-8N1 默认配置、基础线路属性和清除/刷新。 |
+| `src/backends/serial/serial_session.cpp` | 实现本机串口打开、9600-8N1 默认配置、基础线路属性和清除/刷新，并复用公共平台串口路径转换。 |
 | `src/backends/usb/libusb_provider.h` | 声明内建 libusb provider 注册入口，以及不依赖 libusb 头的 USBTMC/RAW 接口描述符校验、错误映射和可用性测试边界。 |
 | `src/backends/usb/libusb_provider.cpp` | 实现可选 libusb 1.0.30 runtime、USBTMC/USB488 与 RAW 枚举/精确端点匹配、INSTR/RAW 共享 handle/claim、异步双向 bulk/control/interrupt transfer、安全多 transfer 取消、端点 gate 和热拔出连接失效；禁用构建提供明确 stub。 |
 | `src/backends/usb/usb_provider.h` | 声明进程内 USB provider 注册/发现/打开契约，以及同一物理接口共享 claim 生命周期与拔出失效的仲裁器。 |
@@ -100,6 +102,7 @@
 | `src/backends/usb/usbtmc_session.cpp` | 实现 USBTMC 消息 I/O、短包/read-ahead、class clear/abort split transaction、取消/超时恢复，以及 USB488 状态字/触发/interrupt-IN。 |
 | `src/platform/serial_discovery.h` | 声明当前平台串口发现与路径规范化接口。 |
 | `src/platform/serial_discovery.cpp` | 实现 Linux/macOS `/dev` 发现、Windows COM 枚举和 COM10+ 本机路径转换。 |
+| `src/platform/serial_path.h` | 提供 ASRL 与 Prologix 共用的轻量平台路径转换，包括 Windows COM10+ 命名。 |
 
 ## 测试
 
@@ -113,6 +116,8 @@
 | `tests/tcp_tests.cpp` | 以本机 TCP 服务端覆盖连接/属性、终止符、read-ahead、部分超时回收、排队读写独立 deadline、批量取消、阻塞写取消和关闭。 |
 | `tests/protocol_codec_tests.cpp` | 覆盖 XDR/RPC 固定向量与 reply 校验、HiSLIP 精确帧头，以及截断、超限 opaque、错误 XID/状态和畸形长度拒绝。 |
 | `tests/gpib_tests.cpp` | 以仅存在于测试目标的 GPIB provider/transport，经公共 `vi*` 覆盖发现快照、故障隔离、地址路由、EOI/终止符/read-ahead、能力门禁、取消、超时和会话复用。 |
+| `tests/prologix_tests.cpp` | 以生产 TCP 连接和 loopback 控制器，经公共 API 覆盖配置校验、初始化、共享仲裁、主次地址、转义、EOI/read-ahead、clear/trigger/spoll、队列 deadline、超限/取消失效和重连。 |
+| `tests/prologix_serial_tests.cpp` | 在 Linux POSIX PTY 上经生产串口连接覆盖显式路径、9600-8N1 打开、初始化、转义写入和 EOT 读取。 |
 | `tests/usb_tests.cpp` | 以脚本化 USB transport 覆盖 USBTMC/USB488 固定向量、合法对齐与畸形输入、class clear/abort、状态标签/interrupt-IN、取消/超时恢复、回退 clear、复用与不可恢复关闭。 |
 | `tests/usb_raw_tests.cpp` | 以脚本化 transport 覆盖 RAW bulk/interrupt 读写、终止符/read-ahead、control IN/OUT、端点 halt、配置不匹配及不支持端点。 |
 | `tests/usb_api_tests.cpp` | 以仅存在于测试目标的 USB provider/设备模拟器，经公共 `vi*` 覆盖发现快照、provider 故障隔离、INSTR/RAW 共享 claim、版本化配置/control 错误契约、USBTMC/USB488/RAW I/O、取消后复用、拔出和重连代际隔离。 |

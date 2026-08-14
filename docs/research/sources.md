@@ -49,6 +49,23 @@ Asio 版本和构建决策见 [`ADR-0006`](../decisions/0006-asio-real-transport
 官方 4.3.7 的异步 API 以每个 descriptor 的内部 pthread 执行 `ibrda`/`ibwrta`，`ibwait(CMPL)` 或 `ibstop` 负责 join 并同步 `AsyncIbsta`/`AsyncIberr`/`AsyncIbcntl`。`ibstop` 成功中止以 `ERR`/`EABO` 表示；`ibtmo` 只有离散档位，实际超时不会早于所选档位。这些语义与现有 Transport 可以建立技术映射，但许可闸门先于实现，因而没有创建 C API 函数表、模拟器或 Provider。完整记录见 [`0.6 linux-gpib 评审`](../progress/2026-08-14-stage-0.6-linux-gpib-review.md)。
 
 ## 开源实现参考边界
+## 0.6 Prologix 官方命令协议
+
+| 资料 | 固定证据 | 当前关系 |
+|---|---|---|
+| Prologix GPIB-USB Controller User Manual 6.0 | 官方 PDF；2026-08-14 下载 SHA-256 `c0e29c6f591d542b057be7a8b2674080d02c194e47a4e9cd55c386e746cbdbbb` | 只作为串口命令协议依据；不复制或分发 PDF，不依赖厂商软件包 |
+| Prologix GPIB-ETHERNET Controller User Manual | 官方 PDF；2026-08-14 下载 SHA-256 `163a200f59e361d32106eae67a9de41e9a166bfa22395dfe7fb255eff2cff5e1` | 只作为 TCP 1234 与共用 `++` 命令协议依据；不复制或分发 PDF |
+
+两份手册共同支持 controller mode、主/次地址、写 EOI、selected device clear、group execute trigger、serial poll、1–3000 ms `read_tmo_ms`、`++read eoi` 和数据发送转义。初始化先发 `++savecfg 0`，避免后续地址/EOI 变化按默认设置反复写入 EEPROM；再固定 `mode 1`、`auto 0`、`eos 3`、EOT 和读取 timeout，并通过 `++ver` 验证端点。
+
+手册的 EOT 机制只在检测到 GPIB EOI 后追加一个配置字节，设备到主机方向没有对同值仪器数据的转义，因此不能构成任意 8 位透明边界。本实现把 EOT 字节和最大响应大小列为显式配置，并将冲突可能性记录为适用性限制，而不是宣称协议能够消歧。完整工程决策见 [ADR-0012](../decisions/0012-prologix-controller-boundary.md)。
+
+- https://prologix.biz/downloads/PrologixGpibUsbManual-6.0.pdf
+- https://prologix.biz/downloads/PrologixGpibEthernetManual.pdf
+- https://prologix.biz/product/gpib-ethernet-controller/
+- https://prologix.biz/resources/frequently-asked-questions/gpib-usb-controller-faq/
+
+
 
 `0.1`–`0.4` 没有复制或修改下列参考项目代码，也不链接其库。VXI-11/HiSLIP 的协议层依据上节公开规范独立编写；0.4 属性表达式解析器同样为依据 VPP-4.3 编写的第一方代码。没有引入 `libtirpc`、`liblxi` 或 `libhislip`。2026-08-11 的既有源码复核详情见 [`implementation-review.md`](implementation-review.md)。采用的 Asio 与 libusb 依赖已在上节单独声明，不归入“仅参考”列表。
 

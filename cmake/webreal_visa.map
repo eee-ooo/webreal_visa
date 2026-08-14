@@ -45,3 +45,8 @@ WRVISA_0.5 {
         wrvisaSetUsbRawConfig;
         wrvisaUsbControlTransfer;
 } WRVISA_0.4;
+
+WRVISA_0.6 {
+    global:
+        wrvisaSetPrologixController;
+} WRVISA_0.5;

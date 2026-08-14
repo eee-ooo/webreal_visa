@@ -149,6 +149,7 @@ ViStatus GpibBackendSession::clear(Operation& operation) {
     }
     const auto status = transport_->clear(operation);
     if (status >= VI_SUCCESS) {
+        transport_->discard_read_buffer();
         read_ahead_.clear();
         read_ahead_end_ = false;
     }
@@ -160,6 +161,7 @@ ViStatus GpibBackendSession::flush_locked(ViUInt16 mask) {
         return VI_ERROR_INV_MASK;
     }
     if ((mask & (VI_READ_BUF_DISCARD | VI_IO_IN_BUF_DISCARD)) != 0) {
+        transport_->discard_read_buffer();
         read_ahead_.clear();
         read_ahead_end_ = false;
     }

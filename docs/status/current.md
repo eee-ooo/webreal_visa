@@ -2,19 +2,20 @@
 
 更新时间：2026-08-14
 
-当前开发版本：`0.6.0`。用户于 2026-08-13 授权进入 GPIB 阶段；资源身份、可替换 controller provider/transport 和测试专用控制器公共 API 闭环的第一纵向切片已完成，证据见 [`0.6 切片 1`](../progress/2026-08-13-stage-0.6-gpib-slice-1.md)，边界见 [`ADR-0010`](../decisions/0010-gpib-controller-provider-boundary.md)。2026-08-14 完成第二切片的 linux-gpib 4.3.7 许可/API 闸门；因 GPL 边界不满足当前 MIT 依赖政策，决定不实现进程内 Provider，证据见 [`linux-gpib 评审`](../progress/2026-08-14-stage-0.6-linux-gpib-review.md) 与 [`ADR-0011`](../decisions/0011-linux-gpib-license-boundary.md)。0.5 五个无硬件 USB 切片是既有基线，真实 USB/GPIB 硬件均无法验证；0.4–0.6 新增能力也尚未在 Windows 原生重跑，因此这些范围保持 `NOT_TESTED`。
+当前开发版本：`0.6.0`。GPIB 第一切片已交付通用资源/provider/transport 与模拟公共 API 闭环；第二切片因 GPL 边界拒绝 linux-gpib 进程内集成。2026-08-14 第三切片完成显式配置的 Prologix 串口/TCP 生产 Provider，设计见 [`ADR-0012`](../decisions/0012-prologix-controller-boundary.md)，证据见 [`Prologix 切片记录`](../progress/2026-08-14-stage-0.6-prologix-slice.md)。当前生产代码已通过 Linux TCP loopback 与 POSIX PTY 受控端点验证，但真实 Prologix/GPIB 仪器、0.4–0.6 Windows 原生 runtime、真实 USB 与 macOS 继续保持 `NOT_TESTED`。
 
 ## 0.6 进行中
 
-- `ResourceDescriptor` 现在保留 GPIB board、主地址、可选次地址和 `INSTR`/`INTFC` 身份；原有地址范围校验与规范化名称成为发现和打开的共同键。
-- `GpibProvider` 注册表负责发现快照与显式打开路由，隔离单个 provider 的发现失败，规范化/去重资源，并在多个 provider 均失败时保留最早可诊断状态。
-- `GpibTransport` 不暴露 linux-gpib、NI-488.2 或 Prologix 类型，明确承载 EOI/send-end、device clear、trigger、serial poll、取消、断开和关闭能力。
-- `GpibBackendSession` 按半双工串行化会话事务，并复用统一 operation deadline、终止符、EOI/read-ahead、失败缓冲回收和成功竞争后才提交用户输出的规则。
-- 测试目标内的 provider 经公共 `viFindRsrc`、`viOpen`、`viRead`、`viWrite`、`viReadSTB`、`viClear`、`viAssertTrigger`、`viFlush` 与 `viTerminate` 覆盖发现快照、地址路由、能力门禁、取消、超时和复用；模拟逻辑未进入生产库。
-- `GPIB[board]::INTFC` 可解析和发现，但专用控制器会话语义尚未确定，打开明确返回 `VI_ERROR_NSUP_OPER`。未注册 provider 时，合法 `INSTR` 同样明确不支持。
-- 0.6 未新增公共 C ABI；现有 21 个 `vi*` 与 5 个 `wrvisa*` 共 26 个导出及其 0.1–0.5 版本节点保持不变。
-- linux-gpib 4.3.7 的 `ibdev`、异步 I/O、`ibwait`/`ibstop`、线程局部状态、离散 timeout、clear/trigger/serial poll 与关闭语义已完成技术映射；用户态库、公开头和实现均处于 GPL 边界且无链接例外，因此 ADR-0011 禁止在核心库直接链接、延迟链接或 `dlopen`。
-- 当前没有生产 GPIB provider，也没有真实控制器或总线仪器；NI-488.2、Prologix、Windows GPIB runtime 与真实硬件均未实现或为 `NOT_TESTED`，两个切片都不能描述为本机 GPIB 已可直接使用。
+- 通用 `GpibProvider`/`GpibTransport`/`GpibBackendSession` 保持厂商无关，承载 board/主次地址、EOI/send-end、clear、trigger、serial poll、deadline、取消和 read-ahead；测试 provider 继续证明发现与能力门禁。
+- linux-gpib 4.3.7 的技术映射仍保留，但用户态库、公开头和实现处于 GPL 边界且无链接例外；ADR-0011 禁止直接链接、延迟链接或 `dlopen`，Prologix 路径不依赖它。
+- 新增 RM 范围 `wrvisaSetPrologixController` 和 40 字节 ABI v1 配置，将一个 GPIB board 显式映射到串口路径或 TCP host/port；不猜测 ASRL 编号、不扫描 GPIB 地址、不虚构发现资源。
+- 21 个既有 `vi*` 与新增后的 6 个 `wrvisa*` 共 27 个导出；`wrvisaSetPrologixController` 固定在新的 `WRVISA_0.6` 节点，旧符号所属节点不变。
+- 进程级池按连接类型、原样 endpoint 和 TCP port 共享 controller；同一身份的多个 RM/board/session 在完整地址/状态/I/O/排空事务外仲裁，冲突配置返回 `VI_ERROR_RSRC_BUSY`。别名不去重，部署必须统一 endpoint 拼写。
+- 每次连接先发 `++savecfg 0`，再固定 controller mode、关闭 auto/EOS、配置 EOT/read timeout 并以 `++ver` 校验，避免运行时地址/EOI 切换磨损 EEPROM。
+- 写入转义 CR/LF/ESC/`+`；读取先把整条响应有界排空到 EOT，再交给会话终止符/read-ahead。clear、trigger 和 serial poll 映射到官方命令。
+- 排队等待服从 operation deadline；活动事务超时、取消、超限、协议或连接错误会关闭通道，下一事务重连并完整初始化，不复用未知状态。
+- TCP 生产路径经 loopback 覆盖共享、主次地址、转义、EOI、控制命令、队列 timeout、超限/取消恢复；串口生产路径经 POSIX PTY 覆盖实际打开、初始化、写入和 EOT 读取。
+- `GPIB[board]::INTFC`、控制器发现、endpoint 别名去重、跨进程仲裁和任意二进制响应未实现；单字节 EOT 若出现在仪器响应中无法消歧。真实硬件和 Windows runtime 仍为 `NOT_TESTED`。
 
 ## 0.5 进行中
 
@@ -47,14 +48,15 @@
 - VPP `{attrExpr}` 静态属性查找子集：逻辑组合、数值比较、字符串等值，并对未知/局部/类型错误属性明确返回 `VI_ERROR_INV_EXPR`。
 - RM 范围 `wrvisaSetResourceAlias`：进程内、非持久化、大小写无关；打开和两个 Parse 入口共享解析语义。Find/Parse 标准可选输出已补齐。
 - RM 范围 `wrvisaSetUsbRawConfig` 与 RAW 会话扩展：显式 bulk/interrupt 端点、标准同步读写、端点零 control、取消与共享 claim；Linux 无硬件模拟闭环已验证，真实设备未验证。
-- 测试/内部集成可注册 GPIB provider，经标准资源名和既有 `vi*` 使用读写、EOI、终止符、状态字、清除、触发与取消；当前没有面向最终用户的生产控制器 provider。
-- 0.1–0.5 ABI 历史清单固定 26 个公共符号所属版本节点，并与 ELF/PE 精确导出门禁分离，避免白名单与产物同时漂移。
+- GPIB 除测试 provider 外，最终用户可通过 `wrvisaSetPrologixController` 显式配置 Prologix 串口/TCP 控制器，再以标准 `GPIB...::INSTR` 和既有 `vi*` 操作；适用性受 EOT、端点身份和 `NOT_TESTED` 边界约束。
+- 0.1–0.6 ABI 历史清单固定 27 个公共符号所属版本节点，并与 ELF/PE 精确导出门禁分离，避免白名单与产物同时漂移。
 - 进程共享的固定 Asio 1.38.2 I/O runtime、每通道 strand、有界请求队列、绝对 deadline 和协议响应排空/清除恢复；无每会话线程。
 
 ## Linux 已验证
 
 - 0.6 第一切片在 GCC 13.3、libusb 启用时 Debug/Release 全量各 20/20，GCC ASan/UBSan/LSan（`detect_leaks=1`）20/20；显式关闭 libusb 的 Debug 为 19/19。`gpib_tests` 覆盖测试 provider 的公共 API 闭环、取消/超时和复用，并在 Release 连续 1000/1000 轮通过。
-- 0.6 Release 全新安装后，独立纯 C 静态/共享消费 2/2；ELF ABI 历史与精确导出门禁确认仍为 26 项。MinGW-w64 GCC 13 Release、`WRVISA_LIBUSB=OFF` 编译全部库和测试目标，文档/ABI/PE 导出 3/3，PE 仍为 26 项；交叉产物未运行，不能替代 Windows 原生证据。
+- 0.6 第三切片在 GCC 13.3 以 `-fPIC`、CMake 等价高告警和 `-Werror` 手工编译全部生产源；TCP loopback、POSIX PTY、通用 GPIB 与 C/C++ 头回归通过，通用 GPIB 与两个 Prologix 测试在 ASan/UBSan/LSan 下通过。ELF ABI、文档与 ABI 历史门禁确认 27 项/89 文件/6 节点；MinGW-w64 GCC 13 编译生产源并链接测试，PE 导出为 27 项。当前容器缺少 CMake，因此未把手工结果表述为完整 CTest/安装消费或 Windows runtime。
+- 0.6 第一切片的历史 Release 证据：全新安装后独立纯 C 静态/共享消费 2/2，当时 ELF ABI 历史与精确导出均为 26 项；MinGW-w64 GCC 13、`WRVISA_LIBUSB=OFF` 当时编译全部库和测试目标，PE 亦为 26 项。该证据早于第 27 个 Prologix 配置导出，且交叉产物未运行，不能替代当前安装消费或 Windows 原生证据。
 - 0.4 GCC 13.3 Debug/Release 全量各 14/14；GCC ASan/UBSan/LSan（`detect_leaks=1`）14/14。属性表达式正反例、alias 三入口一致性、可选输出和 ABI 历史均包含在内。
 - 0.4 Release 全新安装后静态/共享纯 C 消费 2/2；ELF 恰好导出 21 个 `vi*` 与三个 `wrvisa*`，共 24 项，0.1–0.4 版本节点历史一致。
 - 0.4 `resource_tests` 与 `api_tests` 各连续 100 轮通过；CI 同款资源/API/并发/raw TCP/codec/HiSLIP/VXI-11/ASRL 八个用例各连续 25 轮通过。
@@ -75,16 +77,16 @@
 
 ## 当前限制与发布阻塞
 
-- 0.4–0.6 新增 alias/API、属性查找、USB/GPIB、26 项 PE 导出和安装消费尚未在 Windows 原生重跑，状态为 `NOT_TESTED`；旧 0.3 Windows DLL 的 23 项结果不能替代本轮验证。
+- 0.4–0.6 新增 alias/API、属性查找、USB/GPIB、当前 27 项 PE 导出和安装消费尚未在 Windows 原生重跑，状态为 `NOT_TESTED`；旧 0.3 Windows DLL 的 23 项结果不能替代本轮验证。
 - Windows 原生网络/协议无硬件门禁已完成；Windows ASRL runtime、真实串口电气行为和真实仪器互操作仍为 `NOT_TESTED`。任何交叉构建只能证明可编译，不能替代 runtime 结果。
 - VXI-11/HiSLIP 只与仓库内受控 loopback 模拟器互操作；第三方真实仪器、不同厂商错误行为和网络异常组合为 `NOT_TESTED`。
 - HiSLIP 当前只实现 1.x 同步模式；overlap、HiSLIP 2、TLS/加密和生产 DNS-SD/mDNS 发现未实现。初始化发送的 `WR` vendor ID 是临时项目值，尚未按 IVI VPP-9 注册，不能宣称正式互操作认证。
 - VXI-11 远端协议只有排他锁；VISA 共享锁仍只协调当前进程。跨进程锁、完整属性过滤、持久化系统 alias/完整资源类型和稳定版二进制兼容承诺未实现。
-- USB 0.5 的五个无硬件代码切片已经完成，但不得被描述为真实 USB 硬件验证；真实 USBTMC/USB488/RAW 的枚举、驱动 detach、权限、claim、端点和厂商初始化组合仍为 `NOT_TESTED`。GPIB 0.6 目前也只有传输契约与测试 provider；GPL linux-gpib 已明确拒绝进入进程内生产边界，其他生产控制器、`INTFC` 会话、厂商 VISA、动态插件加载和异步 job API 未实现。ASRL 的 mark/space parity、DTR/DSR 流控和完整 VISA 串口属性仍不完整。
+- USB 0.5 的五个无硬件代码切片已经完成，但不得被描述为真实 USB 硬件验证；真实 USBTMC/USB488/RAW 仍为 `NOT_TESTED`。GPIB 0.6 已有受限 Prologix 生产路径，但真实控制器/仪器、Windows runtime、EOT 冲突响应、endpoint 别名与跨进程并发仍未验证或不支持；linux-gpib 继续被许可边界拒绝，NI-488.2、`INTFC` 会话、厂商 VISA、动态插件加载和异步 job API 未实现。ASRL 的 mark/space parity、DTR/DSR 流控和完整 VISA 串口属性仍不完整。
 - macOS 构建/运行未验证。ThreadSanitizer 在当前容器因运行时内存映射不兼容而无法启动，不得记为通过。
 - 当前 Linux 环境没有 Clang、Valgrind、clang-tidy/cppcheck，且无 sudo 非交互安装权限；本轮相应矩阵未执行，不得记为通过。GCC Sanitizer 不能替代 ThreadSanitizer 或不同编译器验证。
 - 版权主体仍为 `[TBD_COPYRIGHT_HOLDER]`；正式项目 `LICENSE` 和对外发布被阻塞。Asio 与 libusb 第三方许可证及声明已随仓库保留。
 
 ## 下一步
 
-推荐进入 0.6 第三切片的 Prologix 候选评审：先决定标准 GPIB 资源到串口/TCP 控制器端点的显式配置方式，再评审命令模式、EOI/EOS、超时取消、控制能力缺口和多会话仲裁；没有明确配置与恢复语义前不实现。NI-488.2 继续作为 Windows 专属独立切片。Windows 原生复验与真实 USB/GPIB 硬件继续作为独立 `NOT_TESTED` 矩阵。
+下一阶段优先取得一台真实 Prologix 控制器和已知响应的 GPIB 仪器，验证串口/TCP、主次地址、EOI、clear/trigger/spoll、超时恢复及部署端点规则；并在具备 CMake 的环境补跑完整 CTest/Sanitizer/安装消费，在 Windows 原生复验 27 项 ABI 与串口/TCP runtime。NI-488.2 保持为后续 Windows 专属独立切片，不与本轮混合。

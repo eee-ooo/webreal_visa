@@ -20,6 +20,8 @@
 
 namespace wrvisa {
 
+class GpibProvider;
+
 struct ResolvedResource {
     ResourceDescriptor descriptor;
     std::string alias;
@@ -38,6 +40,9 @@ public:
                                 ViUInt16 port);
     std::optional<ViUInt16> tcpip_service_port(
         const std::string& host, TcpipProtocol protocol) const;
+    bool set_gpib_provider(ViUInt16 board,
+                           std::shared_ptr<GpibProvider> provider);
+    std::shared_ptr<GpibProvider> gpib_provider(ViUInt16 board) const;
     bool set_resource_alias(std::string alias, ResourceDescriptor resource);
     bool set_usb_raw_configuration(std::string resource,
                                    UsbRawConfiguration configuration);
@@ -52,6 +57,7 @@ private:
     std::unordered_set<ViObject> children_;
     std::map<ViUInt16, std::string> serial_paths_;
     std::vector<std::string> gpib_resources_;
+    std::map<ViUInt16, std::shared_ptr<GpibProvider>> gpib_providers_;
     std::vector<std::string> usb_resources_;
     std::map<std::pair<std::string, TcpipProtocol>, ViUInt16>
         tcpip_service_ports_;
